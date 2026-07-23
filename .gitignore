@@ -1,0 +1,58 @@
+# Claude configuration directory
+.claude/
+
+# IDE / System files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvsca
+*.njsproj
+*.sln
+*.sw?
+
+# Local configuration/credentials
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.keystore
+*.jks
+
+# Android & Gradle
+.gradle/
+local.properties
+**/build/
+.navigation/
+.cxx/
+captures/
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Node / JS / TS (Backend / Frontend)
+node_modules/
+/dist/
+/out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.eslintcache
+
+# Python (Backend / Scripting)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Logs and databases
+*.log
+*.sqlite
+
