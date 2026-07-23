@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:realitylock:proof-package:1.0.0",
+  "title": "Reality Lock Proof Package",
+  "description": "Tamper-evident record produced at capture time and consumed by the verification module. This schema is the single shared contract between the Android app (producer) and the backend verifier (consumer). See docs/design/PROOF_PACKAGE_SPEC.md for field-by-field rationale and docs/design/adr/ for the design decisions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaUrn",
+    "schemaVersion",
+    "eventId",
+    "media",
+    "metadata",
+    "canonicalization",
+    "merkle",
+    "signature"
+  ],
+  "properties": {
+    "schemaUrn": {
+      "type": "string",
+      "const": "urn:realitylock:proof-package:1.0.0",
+      "description": "Stable format identifier; must equal the schema $id."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic version of the proof-package format."
+    },
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Client-generated UUID uniquely identifying this capture event."
+    },
+    "media": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mimeType", "byteLength", "sha256"],
+      "properties": {
+        "mimeType": {
+          "type": "string",
+          "examples": ["image/jpeg", "video/mp4"]
+        },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex SHA-256 of the raw media bytes."
+        },
+        "storageRef": {
+          "type": ["string", "null"],
+          "description": "Backend/cloud object reference, populated after upload. Null on-device before sync."
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["location", "timestamp", "device"],
+      "properties": {
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["latitude", "longitude", "accuracyMeters", "isMock"],
+          "properties": {
+            "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
+            "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
+            "accuracyMeters": { "type": "number", "minimum": 0 },
+            "altitudeMeters": { "type": ["number", "null"] },
+            "provider": { "type": ["string", "null"] },
+            "fixAgeMillis": {
+              "type": ["integer", "null"],
+              "description": "Age of the GPS fix relative to media capture (research/03 §3)."
+            },
+            "isMock": {
+              "type": "boolean",
+              "description": "Location.isMock()/isFromMockProvider() at capture (research/02 §6)."
+            }
+          }
+        },
+        "timestamp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["wallClockMillis", "iso8601", "elapsedRealtimeNanos"],
+          "properties": {
+            "wallClockMillis": {
+              "type": "integer",
+              "description": "System.currentTimeMillis() at capture (human/legal-readable time)."
+            },
+            "iso8601": {
+              "type": "string",
+              "format": "date-time",
+              "description": "UTC ISO-8601 rendering of wallClockMillis."
+            },
+            "elapsedRealtimeNanos": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "SystemClock.elapsedRealtimeNanos() — monotonic, shared clock base with sensors/CameraX (research/03 §4)."
+            },
+            "wallClockOffsetMillis": {
+              "type": ["integer", "null"],
+              "description": "currentTimeMillis - elapsedRealtimeNanos/1e6, captured at bundle time to reconcile clocks."
+            },
+            "gpsTimeMillis": {
+              "type": ["integer", "null"],
+              "description": "Location.getTime() UTC, a cross-check against the derived wall clock."
+            }
+          }
+        },
+        "motion": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["accelerometer", "gyroscope"],
+          "properties": {
+            "accelerometer": { "$ref": "#/$defs/vector3" },
+            "gyroscope": { "$ref": "#/$defs/vector3" },
+            "sampleElapsedRealtimeNanos": { "type": ["integer", "null"] }
+          }
+        },
+        "device": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["installId", "model", "manufacturer", "sdkInt", "appVersionName", "appVersionCode"],
+          "properties": {
+            "installId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Locally-generated install UUID — NOT IMEI/ANDROID_ID (research/03 §5)."
+            },
+            "model": { "type": "string" },
+            "manufacturer": { "type": "string" },
+            "sdkInt": { "type": "integer", "minimum": 1 },
+            "appVersionName": { "type": "string" },
+            "appVersionCode": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "canonicalization": {
+      "type": "string",
+      "const": "RFC8785",
+      "description": "Canonicalization applied to metadata before hashing (JSON Canonicalization Scheme)."
+    },
+    "merkle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "scheme", "leaves", "root"],
+      "properties": {
+        "algorithm": { "type": "string", "const": "SHA-256" },
+        "scheme": {
+          "type": "string",
+          "enum": ["2-leaf", "5-leaf"],
+          "description": "v1 implements 2-leaf [media, metadata]; 5-leaf is the selective-disclosure target (ADR-0001)."
+        },
+        "leaves": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Per-leaf hashes. For 2-leaf, 'media' and 'metadata' are present; for 5-leaf, the four semantic leaves are present.",
+          "properties": {
+            "media": { "$ref": "#/$defs/sha256hex" },
+            "metadata": { "$ref": "#/$defs/sha256hex" },
+            "location": { "$ref": "#/$defs/sha256hex" },
+            "timestamp": { "$ref": "#/$defs/sha256hex" },
+            "motion": { "$ref": "#/$defs/sha256hex" },
+            "device": { "$ref": "#/$defs/sha256hex" }
+          }
+        },
+        "root": { "$ref": "#/$defs/sha256hex" }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value", "publicKey"],
+      "properties": {
+        "algorithm": { "type": "string", "const": "SHA256withECDSA" },
+        "value": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "description": "ECDSA signature over the Merkle root, Base64-encoded."
+        },
+        "publicKey": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["format", "curve", "value"],
+          "properties": {
+            "format": { "type": "string", "const": "X.509" },
+            "curve": { "type": "string", "const": "secp256r1" },
+            "value": { "type": "string", "contentEncoding": "base64" }
+          }
+        },
+        "attestationCertificateChain": {
+          "type": ["array", "null"],
+          "items": { "type": "string", "contentEncoding": "base64" },
+          "description": "Android Key Attestation chain proving the key is hardware-backed (research/02 §2)."
+        }
+      }
+    },
+    "integrity": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "Optional device/location integrity signals (research/02 §3, §6).",
+      "properties": {
+        "playIntegrityToken": {
+          "type": ["string", "null"],
+          "description": "Encrypted Play Integrity token, decoded server-side only."
+        },
+        "location": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "isMock": { "type": "boolean" },
+            "mockDetectionChecks": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "gnssChecked": { "type": "boolean" },
+            "speedPlausible": { "type": ["boolean", "null"] }
+          }
+        }
+      }
+    },
+    "anchors": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "Optional external timestamp/anchor proofs (Phase 7).",
+      "properties": {
+        "openTimestamps": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["otsBase64", "status"],
+          "properties": {
+            "otsBase64": { "type": "string", "contentEncoding": "base64" },
+            "status": { "type": "string", "enum": ["pending", "confirmed"] }
+          }
+        },
+        "chain": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["network", "txHash"],
+          "properties": {
+            "network": { "type": "string", "examples": ["polygon-amoy"] },
+            "txHash": { "type": "string" },
+            "contractAddress": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "vector3": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3
+    }
+  }
+}

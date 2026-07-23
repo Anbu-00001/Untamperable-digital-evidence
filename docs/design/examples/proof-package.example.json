@@ -1,0 +1,72 @@
+{
+  "schemaUrn": "urn:realitylock:proof-package:1.0.0",
+  "schemaVersion": "1.0.0",
+  "eventId": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "media": {
+    "mimeType": "image/jpeg",
+    "byteLength": 2483712,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "storageRef": null
+  },
+  "metadata": {
+    "location": {
+      "latitude": 12.9716,
+      "longitude": 77.5946,
+      "accuracyMeters": 4.2,
+      "altitudeMeters": 920.0,
+      "provider": "fused",
+      "fixAgeMillis": 850,
+      "isMock": false
+    },
+    "timestamp": {
+      "wallClockMillis": 1784812345678,
+      "iso8601": "2026-07-23T09:12:25.678Z",
+      "elapsedRealtimeNanos": 894512000000000,
+      "wallClockOffsetMillis": 1783917833678,
+      "gpsTimeMillis": 1784812345120
+    },
+    "motion": {
+      "accelerometer": [0.12, 9.79, 0.34],
+      "gyroscope": [0.001, -0.002, 0.0],
+      "sampleElapsedRealtimeNanos": 894511998000000
+    },
+    "device": {
+      "installId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "model": "Pixel 8",
+      "manufacturer": "Google",
+      "sdkInt": 35,
+      "appVersionName": "0.1.0",
+      "appVersionCode": 1
+    }
+  },
+  "canonicalization": "RFC8785",
+  "merkle": {
+    "algorithm": "SHA-256",
+    "scheme": "2-leaf",
+    "leaves": {
+      "media": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "metadata": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    },
+    "root": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+  },
+  "signature": {
+    "algorithm": "SHA256withECDSA",
+    "value": "MEUCIQD0illustrativeBase64SignatureValueForSchemaExampleAAAAAAIgABBCCDDEE==",
+    "publicKey": {
+      "format": "X.509",
+      "curve": "secp256r1",
+      "value": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEillustrativePublicKeyBytesForExampleAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+    },
+    "attestationCertificateChain": null
+  },
+  "integrity": {
+    "playIntegrityToken": null,
+    "location": {
+      "isMock": false,
+      "mockDetectionChecks": ["appops", "settings_secure", "location_flag", "hook_scan"],
+      "gnssChecked": false,
+      "speedPlausible": true
+    }
+  },
+  "anchors": null
+}
