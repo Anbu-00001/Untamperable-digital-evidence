@@ -1,0 +1,21 @@
+# ==========================================================================
+# local.properties TEMPLATE
+# --------------------------------------------------------------------------
+# Copy this file to `local.properties` (which is gitignored) and fill in your
+# machine-specific values. Android Studio auto-generates `local.properties`
+# with `sdk.dir`; add the Reality Lock override lines below it as needed.
+# NEVER commit the real local.properties — it holds machine paths and may hold
+# secrets (Play Integrity project number, etc.).
+# ==========================================================================
+
+# Path to your Android SDK (Android Studio writes this automatically).
+# sdk.dir=/home/<you>/Android/Sdk
+
+# --- Optional Reality Lock overrides (defaults live in gradle.properties) ---
+
+# Point the app at a backend other than the emulator default. On a PHYSICAL
+# device, use your dev machine's LAN IP (find it with `ip addr` / `ifconfig`):
+# REALITYLOCK_BACKEND_BASE_URL=http://192.168.1.20:3000/
+
+# Real Google Cloud project number for Play Integrity (see SETUP.md).
+# REALITYLOCK_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER=123456789012
