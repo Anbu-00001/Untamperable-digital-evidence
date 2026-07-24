@@ -26,18 +26,26 @@ minSdk = "28"                       # API 28 (Android 9) — required floor for 
 targetSdk = "36"
 
 # --- AndroidX / Jetpack core ---
+# NOTE ON THE AGP-8.13 CEILING: Kotlin 2.3.0's max supported AGP is 8.13.0, so
+# this project stays on AGP 8.13.0. The very latest AndroidX has moved past that:
+#   - Compose 1.12 (BOM 2026.06.00) requires AGP 9 + compileSdk 37, so we pin the
+#     last AGP-8 BOM: 2026.04.01 (Compose 1.11.0).
+#   - lifecycle 2.11 requires AGP 9.1+, so we pin the AGP-8-compatible 2.8.4.
+# Bump these together with the toolchain if/when the project moves to AGP 9 + Kotlin 2.4.
 coreKtx = "1.15.0"
-lifecycle = "2.11.0"
+lifecycle = "2.8.4"
 activityCompose = "1.10.1"
-composeBom = "2026.06.00"
+composeBom = "2026.04.01"
 
 # --- Capture pipeline (Phase 2) ---
+# Conservative, pre-AGP-9-wave releases (see the AGP-8.13 ceiling note above).
 camerax = "1.5.0"
-playServicesLocation = "21.4.0"
+playServicesLocation = "21.3.0"
 
 # --- Local persistence + background sync (Phase 2 / Phase 5) ---
-room = "2.8.4"
-workManager = "2.11.2"
+# Room 2.7.0 is the floor that supports KSP2 (required by Kotlin 2.3.0).
+room = "2.7.0"
+workManager = "2.9.0"
 
 # --- Networking (Phase 5) ---
 retrofit = "3.0.0"

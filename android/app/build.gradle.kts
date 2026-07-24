@@ -5,9 +5,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    // KSP is applied in Phase 2 when Room is wired in (keeps the Phase-1
-    // skeleton free of annotation-processor version-alignment risk):
-    // alias(libs.plugins.ksp)
+    alias(libs.plugins.ksp)
 }
 
 // --------------------------------------------------------------------------
@@ -102,16 +100,17 @@ dependencies {
     implementation(libs.bundles.compose)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
-    // ---- Capture pipeline (Phase 2 — uncomment when implementing) ----
-    // implementation(libs.bundles.camerax)
-    // implementation(libs.play.services.location)
-    // implementation(libs.kotlinx.coroutines.play.services)
+    // ---- Capture pipeline (Phase 2) ----
+    implementation(libs.bundles.camerax)
+    implementation(libs.play.services.location)
+    implementation(libs.kotlinx.coroutines.play.services)
 
-    // ---- Local queue + background sync (Phase 2 / Phase 5) ----
-    // Requires applying the KSP plugin above.
-    // implementation(libs.androidx.room.runtime)
-    // implementation(libs.androidx.room.ktx)
-    // ksp(libs.androidx.room.compiler)
+    // ---- Local queue (Phase 2) ----
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
+    // ---- Background sync (Phase 5) ----
     // implementation(libs.androidx.work.runtime.ktx)
 
     // ---- Security / integrity (Phase 3 / Phase 4) ----
@@ -131,9 +130,13 @@ dependencies {
 
     // ---- Testing ----
     testImplementation(libs.junit)
-    testImplementation(libs.robolectric)
     testImplementation(libs.mockk)
-    testImplementation(libs.androidx.test.core)
+    // Robolectric is deferred to Phase 6, where the sensor/location tests that
+    // need a simulated Android framework are written. It drags in very large
+    // `android-all` artifacts, so keeping it off the test classpath until then
+    // keeps the unit-test feedback loop fast.
+    // testImplementation(libs.robolectric)
+    // testImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }
