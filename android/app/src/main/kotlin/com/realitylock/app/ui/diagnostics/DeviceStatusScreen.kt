@@ -13,7 +13,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -23,6 +27,9 @@ import com.realitylock.app.core.config.AppConfig
 import com.realitylock.app.core.config.CryptoConfig
 import com.realitylock.app.core.config.ProofPackageConstants
 import com.realitylock.app.core.device.DeviceCapabilities
+import com.realitylock.app.crypto.AttestationProbe
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Diagnostics view: build configuration and the hardware features the proof
@@ -87,8 +94,42 @@ fun DeviceStatusScreen(modifier: Modifier = Modifier) {
             yesNo(capabilities.hasAccelerometer),
         )
         StatusRow(stringResource(R.string.device_gyroscope), yesNo(capabilities.hasGyroscope))
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            stringResource(R.string.device_section_attestation),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        // Key generation touches secure hardware and can take a second, so it
+        // runs off the main thread and the screen renders without waiting.
+        var attestation by remember { mutableStateOf<AttestationProbe.Result?>(null) }
+        LaunchedEffect(Unit) {
+            attestation = withContext(Dispatchers.IO) {
+                AttestationProbe().run(
+                    exportTo = java.io.File(context.filesDir, ATTESTATION_EXPORT_FILE),
+                )
+            }
+        }
+        val result = attestation
+        if (result == null) {
+            Text(
+                stringResource(R.string.device_attestation_checking),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            StatusRow(stringResource(R.string.device_attestation_hardware), yesNo(result.attested))
+            StatusRow(stringResource(R.string.device_attestation_tier), result.tier.name)
+            StatusRow(
+                stringResource(R.string.device_attestation_chain_length),
+                result.chainLength.toString(),
+            )
+            Text(result.detail, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
+
+/** Diagnostics export; pull with `adb shell run-as <pkg> cat files/<name>`. */
+private const val ATTESTATION_EXPORT_FILE = "attestation-chain.json"
 
 @Composable
 private fun StatusRow(label: String, value: String) {

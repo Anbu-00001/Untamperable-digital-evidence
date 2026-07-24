@@ -46,4 +46,21 @@ object CryptoConfig {
      */
     const val MERKLE_SCHEME_IMPLEMENTED: String = "$MERKLE_LEAVES_IMPLEMENTED$MERKLE_SCHEME_SUFFIX"
     const val MERKLE_SCHEME_TARGET: String = "$MERKLE_LEAVES_TARGET$MERKLE_SCHEME_SUFFIX"
+
+    /** `signature.publicKey.format` — Java's `PublicKey.getEncoded()` is X.509 SPKI. */
+    const val PUBLIC_KEY_FORMAT: String = "X.509"
+
+    /**
+     * Bytes of randomness in the Key Attestation challenge, proving the
+     * attestation was produced for this install rather than replayed. 32 bytes
+     * matches the hash size and stays far below the platform limit that raises
+     * `ERROR_ATTESTATION_CHALLENGE_TOO_LARGE`.
+     */
+    const val ATTESTATION_CHALLENGE_BYTES: Int = 32
+
+    /**
+     * Streaming buffer for media hashing. Media is hashed in chunks so a large
+     * video never has to be resident in memory (research/02 §8 Step 2).
+     */
+    const val HASH_STREAM_BUFFER_BYTES: Int = 8 * 1024
 }

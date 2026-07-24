@@ -70,4 +70,9 @@
     <!-- ==================== Shared ==================== -->
     <string name="common_yes">Yes</string>
     <string name="common_no">No</string>
+    <string name="device_section_attestation">Key attestation</string>
+    <string name="device_attestation_checking">Checking hardware attestation…</string>
+    <string name="device_attestation_hardware">Hardware attested</string>
+    <string name="device_attestation_tier">Security tier</string>
+    <string name="device_attestation_chain_length">Certificate chain length</string>
 </resources>

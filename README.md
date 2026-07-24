@@ -21,12 +21,16 @@
 > [`research/09_PROJECT_PHASES.md`](research/09_PROJECT_PHASES.md) are met** — not
 > merely that code exists. Where they are not met, this says so.
 
-### Phase 0 (Foundations) — partially complete
-- Done: Android project + git, full dependency baseline, local backend.
-- **Not done:** the backend is **localhost-only** (no deployed health-check URL),
-  and no **Firebase** project or **Play Console / GCP + Play Integrity** entry
-  exists yet. Phase 0's exit criteria name all three. These are manual cloud
-  steps ([`SETUP.md`](SETUP.md) §3–4); Play Integrity blocks part of Phase 3.
+### Phase 0 (Foundations) — code complete; three cloud accounts outstanding
+- Done: Android project + git, dependency baseline, backend, and **deployment
+  plumbing solved** — [`render.yaml`](render.yaml) Blueprint and a root
+  [`Dockerfile`](Dockerfile), both verified by building the image and serving
+  `/health` and `/proof` from the running container.
+- **Outstanding — needs account access, not code:** pressing *deploy* to get a
+  public health-check URL; creating the **Firebase** project (Firestore/Storage/
+  Auth); creating the **Play Console + GCP** entry that enables Play Integrity.
+  Steps are in [`SETUP.md`](SETUP.md) §1.1, §3, §4. Only the last blocks work —
+  it gates the Play Integrity task in Phase 3.
 
 ### Phase 1 (Design) — complete
 - Android scaffold: version catalog (every version centralized — nothing hardcoded), layered config (`gradle.properties` → `local.properties` → typed `BuildConfig` → `AppConfig`), centralized `CryptoConfig`/`ProofPackageConstants`.
@@ -64,6 +68,21 @@ cd backend && npm install && npm run validate:schema && npm run dev
 # Android
 # Open the android/ folder in Android Studio and let it sync (see SETUP.md).
 ```
+
+## End-to-end test
+One command drives the whole system — unit tests, schema, a live backend, real
+captures on an attached phone, then the pulled sidecars back through the
+backend's `/proof` and `/verify`:
+```bash
+./scripts/e2e/run_e2e.sh 3        # 3 captures
+SKIP_DEVICE=1 ./scripts/e2e/run_e2e.sh   # no phone attached
+```
+It discovers the package name, a free port and the shutter button at run time —
+nothing about the environment is hardcoded — and checks each capture against
+both the shared schema **and** Phase 2's exit criteria (a document where every
+optional field is null would still be schema-valid, so validity alone is not
+enough). Last run on a OnePlus CPH2591: **11 passed, 0 failed**, motion bound
+0.76 / 1.27 / 4.49 ms from the shutter.
 
 ## What this proves (and does not)
 A passing proof package certifies the media+metadata bundle is **unaltered since capture and signed by a specific hardware-backed key**. It does **not** prove the depicted event was real/unstaged, and is **not** a standalone legal certificate. This honesty is by design — see [`docs/design/PROOF_PACKAGE_SPEC.md`](docs/design/PROOF_PACKAGE_SPEC.md) and `research/06_legal_standards_compliance.md` §7.

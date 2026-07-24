@@ -14,6 +14,28 @@ npm run dev                  # http://localhost:3000  (GET /health)
 ```
 Config is env-driven — copy `backend/.env.example` to `backend/.env` only if you need to change a default.
 
+### 1.1 Deploying it (Phase 0 exit criterion)
+Phase 0 requires the health check to answer **from a deployed URL**. Two ready paths, both tested locally:
+
+**Render (recommended — free tier, no card).** [`render.yaml`](render.yaml) at the repo root is a Blueprint:
+1. Push this repo to GitHub.
+2. Render dashboard → **New → Blueprint** → pick the repo. Everything (root dir, build/start commands, health-check path) is declared already.
+3. Note the assigned URL, then point the app at it in `android/local.properties`:
+   `REALITYLOCK_BACKEND_BASE_URL=https://<your-service>.onrender.com/`
+
+**Docker (Railway / Fly.io / Cloud Run).** Build **from the repository root**, not `backend/`:
+```bash
+docker build -t reality-lock-backend .
+docker run --rm -p 8080:3000 -e PORT=3000 reality-lock-backend
+curl http://127.0.0.1:8080/health
+```
+
+> **Why the build context is the repo root:** the proof schema lives in
+> `docs/design/`, *outside* `backend/`, because it is the single contract shared
+> with the Android app and is deliberately never duplicated. A deploy that ships
+> only `backend/` will fail fast at boot with a message saying exactly this.
+> Override with `PROOF_SCHEMA_PATH` if your platform needs a different layout.
+
 ## 2. Android app
 
 ### 2.1 Prerequisites

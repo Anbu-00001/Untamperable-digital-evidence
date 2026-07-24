@@ -144,9 +144,16 @@ dependencies {
     // implementation(libs.androidx.work.runtime.ktx)
 
     // ---- Security / integrity (Phase 3 / Phase 4) ----
+    // RFC 8785 (JCS) canonicalization, so logically-identical metadata always
+    // hashes identically on producer and verifier.
+    implementation(libs.json.canonicalization)
+    // Tink is NOT used: signing happens with a key that never leaves the Android
+    // Keystore, and java.security.Signature is the supported API for those.
+    // Tink's value is safe key *handling*, which is moot when the key is
+    // non-exportable hardware-resident. See ADR-0004.
     // implementation(libs.tink.android)
+    // Play Integrity is a Phase-7 stretch, not a dependency — see ADR-0004.
     // implementation(libs.play.integrity)
-    // implementation(libs.json.canonicalization)
     // implementation(libs.androidx.exifinterface)
 
     // ---- Networking (Phase 5) ----
