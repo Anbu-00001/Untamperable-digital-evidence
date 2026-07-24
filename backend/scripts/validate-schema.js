@@ -5,21 +5,11 @@
 // so it can gate CI later.
 
 const fs = require('fs');
-const path = require('path');
+const config = require('../src/config');
 const { loadValidator } = require('../src/services/proofSchema');
 
-const examplePath = path.join(
-  __dirname,
-  '..',
-  '..',
-  'docs',
-  'design',
-  'examples',
-  'proof-package.example.json',
-);
-
 const { validate } = loadValidator();
-const example = JSON.parse(fs.readFileSync(examplePath, 'utf8'));
+const example = JSON.parse(fs.readFileSync(config.proofExamplePath, 'utf8'));
 
 if (!validate(example)) {
   console.error('FAIL: example proof package does NOT validate against the schema:');
