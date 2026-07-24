@@ -3,10 +3,20 @@ package com.realitylock.app.capture
 import com.realitylock.app.capture.model.CapturedEvent
 import com.realitylock.app.capture.model.EventMetadata
 import com.realitylock.app.capture.model.MediaData
+import com.realitylock.app.capture.model.MerkleData
+import com.realitylock.app.capture.model.MerkleLeaves
+import com.realitylock.app.capture.model.PublicKeyData
+import com.realitylock.app.capture.model.SignatureData
 import com.realitylock.app.capture.model.TimestampData
 import com.realitylock.app.capture.store.EventRepository
+import com.realitylock.app.capture.store.EventSerializer
 import com.realitylock.app.core.config.CaptureConfig
+import com.realitylock.app.core.config.CryptoConfig
 import com.realitylock.app.core.time.ClockCorrelator
+import com.realitylock.app.crypto.EventSigner
+import com.realitylock.app.crypto.Hashing
+import com.realitylock.app.crypto.MerkleTree
+import com.realitylock.app.crypto.MetadataCanonicalizer
 import java.util.UUID
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -20,7 +30,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *  3. select the sensor sample nearest the frame's capture instant,
  *  4. resolve location (bounded by a timeout so the UI cannot hang),
  *  5. write the immutable media file,
- *  6. persist the metadata sidecar.
+ *  6. hash the media, canonicalize + hash the metadata, compose the Merkle root,
+ *  7. sign that root with the hardware-backed key,
+ *  8. persist the metadata sidecar.
  *
  * Phase 3 extends this with hashing, the Merkle root, and the signature; the
  * shape assembled here is already the proof package's media+metadata subset.
@@ -32,6 +44,7 @@ class CaptureCoordinator(
     private val mediaFileStore: MediaFileStore,
     private val repository: EventRepository,
     private val deviceInfoProvider: DeviceInfoProvider,
+    private val eventSigner: EventSigner,
     private val eventIdFactory: () -> String = { UUID.randomUUID().toString() },
 ) {
 
@@ -78,28 +91,63 @@ class CaptureCoordinator(
         // 5. Write the media exactly once; it is never modified afterwards.
         val mediaFile = mediaFileStore.write(eventId, frame.jpegBytes)
 
+        // 6. Hash the media from the file that was just written, streamed —
+        //    hashing the bytes actually on disk (rather than the in-memory
+        //    array) means the digest describes what a verifier will later read.
+        val mediaHashHex = Hashing.toHex(Hashing.sha256File(mediaFile))
+
+        val metadata = EventMetadata(
+            location = location,
+            timestamp = TimestampData(
+                wallClockMillis = wallClockMillis,
+                iso8601 = ClockCorrelator.toIso8601Utc(wallClockMillis),
+                elapsedRealtimeNanos = captureElapsedRealtimeNanos,
+                wallClockOffsetMillis = offsetMillis,
+                gpsTimeMillis = platformLocation?.time,
+            ),
+            motion = motion,
+            device = deviceInfoProvider.current(),
+        )
+
+        // 7. Canonicalize the metadata exactly as it will be written, then hash
+        //    it. Using the serializer's own output is what guarantees a verifier
+        //    recomputing this leaf from the stored document gets the same value.
+        val metadataHashHex = MetadataCanonicalizer.canonicalHashHex(
+            EventSerializer.metadataJson(metadata),
+        )
+
+        // 8. Compose the 2-leaf Merkle root and sign it in secure hardware.
+        val rootHex = MerkleTree.root2Leaf(mediaHashHex, metadataHashHex)
+        val signed = eventSigner.sign(rootHex)
+
         val event = CapturedEvent(
             eventId = eventId,
             mediaFilePath = mediaFile.absolutePath,
             media = MediaData(
                 mimeType = CaptureConfig.MIME_TYPE_JPEG,
                 byteLength = frame.jpegBytes.size.toLong(),
+                sha256 = mediaHashHex,
             ),
-            metadata = EventMetadata(
-                location = location,
-                timestamp = TimestampData(
-                    wallClockMillis = wallClockMillis,
-                    iso8601 = ClockCorrelator.toIso8601Utc(wallClockMillis),
-                    elapsedRealtimeNanos = captureElapsedRealtimeNanos,
-                    wallClockOffsetMillis = offsetMillis,
-                    gpsTimeMillis = platformLocation?.time,
+            metadata = metadata,
+            merkle = MerkleData(
+                algorithm = CryptoConfig.HASH_ALGORITHM,
+                scheme = CryptoConfig.MERKLE_SCHEME_IMPLEMENTED,
+                leaves = MerkleLeaves(media = mediaHashHex, metadata = metadataHashHex),
+                root = rootHex,
+            ),
+            signature = SignatureData(
+                algorithm = CryptoConfig.SIGNATURE_ALGORITHM,
+                value = signed.signatureBase64,
+                publicKey = PublicKeyData(
+                    format = CryptoConfig.PUBLIC_KEY_FORMAT,
+                    curve = CryptoConfig.EC_CURVE_P256,
+                    value = signed.publicKeyBase64,
                 ),
-                motion = motion,
-                device = deviceInfoProvider.current(),
+                attestationCertificateChain = signed.attestationChainBase64,
             ),
         )
 
-        // 6. Persist the metadata sidecar next to the media.
+        // 9. Persist the metadata sidecar next to the media.
         return repository.save(event)
     }
 }

@@ -56,6 +56,25 @@ object CaptureConfig {
     const val MOTION_MAX_SKEW_MILLIS: Long = 500L
 
     /**
+     * Maximum time the platform may hold sensor samples before delivering them.
+     *
+     * Zero disables **batching**. Android is otherwise free to buffer samples in
+     * the sensor hub and deliver them in bursts, which is good for battery and
+     * wrong for us: the samples carry correct timestamps but arrive too late to
+     * be in our buffer when the shutter fires.
+     *
+     * Measured on a OnePlus CPH2591: with batching left to the platform, a
+     * warm capture bound within a few ms but the *first* capture after a cold
+     * start bound 266 ms out. Disabling batching improves steady-state
+     * delivery, but does not eliminate cold start: if the shutter fires within
+     * roughly a second of the screen opening, the sensor stream may not have
+     * produced anything yet and [MOTION_MAX_SKEW_MILLIS] correctly rejects the
+     * sample, recording `motion: null`. That is the intended outcome — an
+     * honest omission beats a reading that misdescribes the capture instant.
+     */
+    const val SENSOR_MAX_REPORT_LATENCY_MICROS: Int = 0
+
+    /**
      * A location fix older than this is considered too stale to bind to a
      * capture; the UI surfaces it rather than silently attaching bad data.
      */

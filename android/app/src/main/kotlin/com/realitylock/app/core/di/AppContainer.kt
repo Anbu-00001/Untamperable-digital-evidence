@@ -12,6 +12,8 @@ import com.realitylock.app.capture.store.FileEventRepository
 import com.realitylock.app.core.config.CaptureConfig
 import com.realitylock.app.core.device.InstallIdProvider
 import com.realitylock.app.core.time.ClockCorrelator
+import com.realitylock.app.crypto.EventSigner
+import com.realitylock.app.crypto.SigningKeyManager
 import com.realitylock.app.core.time.SystemClockSource
 import java.io.File
 
@@ -38,6 +40,13 @@ class AppContainer(context: Context) {
     private val clockCorrelator = ClockCorrelator(SystemClockSource())
     private val locationSource = LocationSource(appContext)
 
+    /**
+     * One signing key per install, created lazily on first capture. Shared so
+     * every event is signed by the same attested key.
+     */
+    private val signingKeyManager = SigningKeyManager()
+    private val eventSigner = EventSigner(signingKeyManager)
+
     /** Shared store of captured events. */
     val eventRepository: EventRepository = FileEventRepository(capturesDir)
 
@@ -54,5 +63,6 @@ class AppContainer(context: Context) {
             mediaFileStore = mediaFileStore,
             repository = eventRepository,
             deviceInfoProvider = deviceInfoProvider,
+            eventSigner = eventSigner,
         )
 }

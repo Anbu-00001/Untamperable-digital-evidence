@@ -15,10 +15,15 @@ import kotlin.math.abs
  *
  * Sensors are event-driven — there is no "read the sensor now" call — so the
  * collector is started when the capture screen opens and keeps a small buffer.
- * Because `SensorEvent.timestamp` and CameraX's `ImageProxy.imageInfo.timestamp`
- * share the `elapsedRealtimeNanos` clock base (research/03 §4), we can select
- * the sample *nearest the actual capture instant* rather than merely the most
- * recent one, which matters when the callback runs tens of ms after the shutter.
+ * We select the sample *nearest the actual capture instant* rather than merely
+ * the most recent one, which matters when the callback runs tens of ms after
+ * the shutter.
+ *
+ * `SensorEvent.timestamp` is stamped on `CLOCK_BOOTTIME`. The camera timestamp
+ * is **not** guaranteed to share that base — see `ClockCorrelator` — so callers
+ * must pass an instant already normalised onto boot time. Comparing against a
+ * raw camera timestamp on a device whose camera reports `CLOCK_MONOTONIC` is
+ * how captures ended up bound to samples days away.
  */
 class SensorSnapshotCollector(
     context: Context,
@@ -50,10 +55,20 @@ class SensorSnapshotCollector(
     /** Begin buffering. Call when the capture screen becomes visible. */
     fun start() {
         accelerometer?.let {
-            sensorManager.registerListener(this, it, CaptureConfig.SENSOR_SAMPLING_PERIOD)
+            sensorManager.registerListener(
+                this,
+                it,
+                CaptureConfig.SENSOR_SAMPLING_PERIOD,
+                CaptureConfig.SENSOR_MAX_REPORT_LATENCY_MICROS,
+            )
         }
         gyroscope?.let {
-            sensorManager.registerListener(this, it, CaptureConfig.SENSOR_SAMPLING_PERIOD)
+            sensorManager.registerListener(
+                this,
+                it,
+                CaptureConfig.SENSOR_SAMPLING_PERIOD,
+                CaptureConfig.SENSOR_MAX_REPORT_LATENCY_MICROS,
+            )
         }
     }
 

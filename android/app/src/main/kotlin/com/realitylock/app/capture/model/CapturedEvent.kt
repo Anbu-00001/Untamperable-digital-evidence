@@ -20,6 +20,43 @@ data class CapturedEvent(
     val mediaFilePath: String,
     val media: MediaData,
     val metadata: EventMetadata,
+    /** Merkle composition over the media and metadata leaves; null pre-Phase-3. */
+    val merkle: MerkleData? = null,
+    /** ECDSA signature over [MerkleData.root]; null pre-Phase-3. */
+    val signature: SignatureData? = null,
+)
+
+data class MerkleData(
+    val algorithm: String,
+    val scheme: String,
+    val leaves: MerkleLeaves,
+    /** Lowercase hex; this is the value that gets signed. */
+    val root: String,
+)
+
+data class MerkleLeaves(
+    val media: String,
+    val metadata: String,
+)
+
+data class SignatureData(
+    val algorithm: String,
+    /** Base64 DER ECDSA signature over the raw bytes of the Merkle root. */
+    val value: String,
+    val publicKey: PublicKeyData,
+    /**
+     * Base64 DER certificates, leaf first, chaining to a Google attestation
+     * root. Null when the platform could not attest — recorded as absent rather
+     * than implying hardware backing that was never proven (ADR-0004).
+     */
+    val attestationCertificateChain: List<String>? = null,
+)
+
+data class PublicKeyData(
+    val format: String,
+    val curve: String,
+    /** Base64 X.509 SubjectPublicKeyInfo. */
+    val value: String,
 )
 
 data class MediaData(

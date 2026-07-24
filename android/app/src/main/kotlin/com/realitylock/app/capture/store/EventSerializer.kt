@@ -5,7 +5,11 @@ import com.realitylock.app.capture.model.DeviceData
 import com.realitylock.app.capture.model.EventMetadata
 import com.realitylock.app.capture.model.LocationData
 import com.realitylock.app.capture.model.MediaData
+import com.realitylock.app.capture.model.MerkleData
+import com.realitylock.app.capture.model.MerkleLeaves
 import com.realitylock.app.capture.model.MotionData
+import com.realitylock.app.capture.model.PublicKeyData
+import com.realitylock.app.capture.model.SignatureData
 import com.realitylock.app.capture.model.TimestampData
 import com.realitylock.app.core.config.ProofPackageConstants
 import org.json.JSONArray
@@ -37,7 +41,19 @@ object EventSerializer {
         put(KEY_MEDIA, mediaToJson(event.media))
         put(KEY_METADATA, metadataToJson(event.metadata))
         put(KEY_CANONICALIZATION, ProofPackageConstants.JSON_CANONICALIZATION_SCHEME)
+        event.merkle?.let { put(KEY_MERKLE, merkleToJson(it)) }
+        event.signature?.let { put(KEY_SIGNATURE, signatureToJson(it)) }
     }
+
+    /**
+     * The `metadata` object exactly as it will appear in the document.
+     *
+     * Exposed so the capture pipeline hashes the *same* bytes it later writes:
+     * the metadata leaf is `SHA-256(RFC8785(this))`, and a verifier recomputes
+     * it from the stored document. Serializing twice from one code path is what
+     * keeps those two identical.
+     */
+    fun metadataJson(metadata: EventMetadata): String = metadataToJson(metadata).toString()
 
     /**
      * [mediaFilePath] is supplied by the caller rather than read from the
@@ -52,6 +68,8 @@ object EventSerializer {
             mediaFilePath = mediaFilePath,
             media = mediaFromJson(root.getJSONObject(KEY_MEDIA)),
             metadata = metadataFromJson(root.getJSONObject(KEY_METADATA)),
+            merkle = root.optJSONObject(KEY_MERKLE)?.let(::merkleFromJson),
+            signature = root.optJSONObject(KEY_SIGNATURE)?.let(::signatureFromJson),
         )
     }
 
@@ -153,6 +171,70 @@ object EventSerializer {
         appVersionCode = json.getInt(KEY_APP_VERSION_CODE),
     )
 
+    // ---- merkle / signature (Phase 3) ----
+
+    private fun merkleToJson(merkle: MerkleData) = JSONObject().apply {
+        put(KEY_ALGORITHM, merkle.algorithm)
+        put(KEY_SCHEME, merkle.scheme)
+        put(
+            KEY_LEAVES,
+            JSONObject().apply {
+                put(KEY_MEDIA, merkle.leaves.media)
+                put(KEY_METADATA, merkle.leaves.metadata)
+            },
+        )
+        put(KEY_ROOT, merkle.root)
+    }
+
+    private fun merkleFromJson(json: JSONObject): MerkleData {
+        val leaves = json.getJSONObject(KEY_LEAVES)
+        return MerkleData(
+            algorithm = json.getString(KEY_ALGORITHM),
+            scheme = json.getString(KEY_SCHEME),
+            leaves = MerkleLeaves(
+                media = leaves.getString(KEY_MEDIA),
+                metadata = leaves.getString(KEY_METADATA),
+            ),
+            root = json.getString(KEY_ROOT),
+        )
+    }
+
+    private fun signatureToJson(signature: SignatureData) = JSONObject().apply {
+        put(KEY_ALGORITHM, signature.algorithm)
+        put(KEY_VALUE, signature.value)
+        put(
+            KEY_PUBLIC_KEY,
+            JSONObject().apply {
+                put(KEY_FORMAT, signature.publicKey.format)
+                put(KEY_CURVE, signature.publicKey.curve)
+                put(KEY_VALUE, signature.publicKey.value)
+            },
+        )
+        putOrNull(
+            KEY_ATTESTATION_CHAIN,
+            signature.attestationCertificateChain?.let { chain ->
+                JSONArray().also { array -> chain.forEach(array::put) }
+            },
+        )
+    }
+
+    private fun signatureFromJson(json: JSONObject): SignatureData {
+        val publicKey = json.getJSONObject(KEY_PUBLIC_KEY)
+        val chain = json.optJSONArray(KEY_ATTESTATION_CHAIN)
+        return SignatureData(
+            algorithm = json.getString(KEY_ALGORITHM),
+            value = json.getString(KEY_VALUE),
+            publicKey = PublicKeyData(
+                format = publicKey.getString(KEY_FORMAT),
+                curve = publicKey.getString(KEY_CURVE),
+                value = publicKey.getString(KEY_VALUE),
+            ),
+            attestationCertificateChain = chain?.let { array ->
+                (0 until array.length()).map(array::getString)
+            },
+        )
+    }
+
     // ---- helpers ----
 
     private fun JSONObject.putOrNull(key: String, value: Any?) {
@@ -218,4 +300,16 @@ object EventSerializer {
     private const val KEY_SDK_INT = "sdkInt"
     private const val KEY_APP_VERSION_NAME = "appVersionName"
     private const val KEY_APP_VERSION_CODE = "appVersionCode"
+
+    private const val KEY_MERKLE = "merkle"
+    private const val KEY_SIGNATURE = "signature"
+    private const val KEY_ALGORITHM = "algorithm"
+    private const val KEY_SCHEME = "scheme"
+    private const val KEY_LEAVES = "leaves"
+    private const val KEY_ROOT = "root"
+    private const val KEY_VALUE = "value"
+    private const val KEY_PUBLIC_KEY = "publicKey"
+    private const val KEY_FORMAT = "format"
+    private const val KEY_CURVE = "curve"
+    private const val KEY_ATTESTATION_CHAIN = "attestationCertificateChain"
 }

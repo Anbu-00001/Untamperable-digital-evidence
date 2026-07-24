@@ -355,9 +355,24 @@ private fun EventCard(event: CapturedEvent, onDelete: (() -> Unit)? = null) {
                     stringResource(R.string.event_motion_captured)
                 },
             )
+            val merkle = event.merkle
             DetailRow(
                 stringResource(R.string.event_label_hash),
-                event.media.sha256 ?: stringResource(R.string.event_hash_pending),
+                if (merkle == null) {
+                    stringResource(R.string.event_hash_pending)
+                } else {
+                    stringResource(R.string.event_hash_truncated, merkle.root.take(HASH_PREVIEW_LENGTH))
+                },
+            )
+            val signature = event.signature
+            DetailRow(
+                stringResource(R.string.event_label_signature),
+                when {
+                    signature == null -> stringResource(R.string.event_value_not_recorded)
+                    signature.attestationCertificateChain != null ->
+                        stringResource(R.string.event_signature_attested)
+                    else -> stringResource(R.string.event_signature_unattested)
+                },
             )
 
             onDelete?.let {
@@ -384,3 +399,4 @@ private fun Context.isGranted(permission: String): Boolean =
 private const val PREVIEW_ASPECT_RATIO = 3f / 4f
 private const val EVENT_ID_PREVIEW_LENGTH = 8
 private const val MILLIS_PER_SECOND = 1_000L
+private const val HASH_PREVIEW_LENGTH = 16

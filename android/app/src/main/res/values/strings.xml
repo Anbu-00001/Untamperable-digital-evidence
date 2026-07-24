@@ -49,7 +49,11 @@
     <string name="event_label_motion">Motion</string>
     <string name="event_motion_captured">accel + gyro captured</string>
     <string name="event_label_hash">Hash</string>
-    <string name="event_hash_pending">pending (Phase 3)</string>
+    <string name="event_hash_pending">not signed</string>
+    <string name="event_hash_truncated">%1$s…</string>
+    <string name="event_label_signature">Signature</string>
+    <string name="event_signature_attested">hardware-attested</string>
+    <string name="event_signature_unattested">signed, not attested</string>
 
     <!-- ==================== Device status / diagnostics ==================== -->
     <string name="device_section_build">Build configuration</string>

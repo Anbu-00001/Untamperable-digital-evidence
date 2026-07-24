@@ -59,6 +59,14 @@ const config = {
     process.env.PROOF_EXAMPLE_PATH ||
     path.join(repoRoot, 'docs', 'design', 'examples', 'proof-package.example.json'),
 
+  // Shipped with every verdict so a consumer cannot present a `verified`
+  // result as more than it is (research/02 §7, research/06 §7).
+  verdictLimitations: [
+    'Proves the media and metadata are unaltered since capture and were signed by a specific hardware-backed key.',
+    'Does NOT prove the depicted event was real, unstaged, or correctly described.',
+    'Not a standalone legal certificate; BSA 2023 s.63 requires human certification.',
+  ],
+
   // HTTP mount points. These are the contract the Android client codes against
   // (Phase 5), so they are declared once here rather than inline in app.js.
   routes: {
