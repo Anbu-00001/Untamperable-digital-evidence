@@ -32,15 +32,59 @@ The Proof Package is the single artifact Reality Lock produces per captured even
 
 ## Construction order (producer, Android)
 `research/02` §8, Steps 2–7:
-1. `media.sha256 = SHA-256(mediaBytes)` (streamed).
+1. `media.sha256 = SHA-256(mediaBytes)` (streamed), lowercase hex.
 2. Build metadata object → `JCS` canonicalize → `metadataHash = SHA-256(canonical)`.
-3. `merkle.root = SHA-256(mediaHash ‖ metadataHash)` (2-leaf).
-4. `signature.value = ECDSA_sign(AndroidKeystoreKey, merkle.root)`.
+3. `merkle.root = SHA-256(rawBytes(mediaHash) ‖ rawBytes(metadataHash))` (2-leaf).
+4. `signature.value = ECDSA_sign(AndroidKeystoreKey, rawBytes(merkle.root))`.
 5. Attach `publicKey` (+ attestation chain), `integrity`, then assemble the JSON.
 
-## Verification order (consumer, backend — Phase 5)
-`research/02` §8, Step 10, exposed as the `/verify` per-check breakdown:
-`schemaValid → mediaHashMatch → metadataHashMatch → signatureValid (+ attestation chain) → timestampPlausible → locationPlausible → playIntegrity` → overall verdict.
+### The concatenation and signing inputs are byte-exact
+Steps 3–4 are the only places where producer and verifier can silently disagree,
+so they are stated without ambiguity:
+
+- **`‖` joins the two raw 32-byte digests, not their hex renderings**, in the
+  fixed order `[media, metadata]`. Never sorted, never length-prefixed. Hashing
+  the concatenated *hex text* yields a different root and is wrong.
+- **The signature covers the raw 32 bytes of `merkle.root`**, which
+  `SHA256withECDSA` then hashes internally. Signing the hex string is wrong.
+
+A verifier fed the wrong interpretation computes a well-formed but incorrect
+value and reports a failure indistinguishable from tampering. To make drift
+impossible rather than merely discouraged, both implementations assert one fixed
+vector — `MerkleTree.CROSS_IMPL_TEST_VECTOR` in Kotlin and the same constants in
+`backend/test/proofVerifier.test.js`:
+
+```
+media    = SHA-256("reality-lock-media-test-vector")    = 0c865511…6a942fea
+metadata = SHA-256("reality-lock-metadata-test-vector") = 695cadf1…fdabb391
+root                                                     = 63e7fd2d…6c792270
+```
+
+## Verification order (consumer, backend)
+`research/02` §8, Step 10, exposed as the `/verify` per-check breakdown.
+Implemented in Phase 3: `schemaValid → mediaHashMatch → metadataHashMatch →
+merkleRootMatch → signatureValid → attestationPresent → attestationChainValid →
+attestationKeyBinding`. Deferred to Phase 4/5: `timestampPlausible`,
+`locationPlausible`.
+
+Three properties of the breakdown are deliberate:
+
+- **`unavailable` is not `pass`.** A check that could not be run (e.g. the media
+  bytes were not supplied) reports `unavailable`, and the overall verdict stays
+  `incomplete`. Absence of evidence must never read as evidence.
+- **`attestationKeyBinding` is load-bearing.** It asserts that the public key in
+  `signature.publicKey` is the same key the attestation chain attests. Without
+  it, a genuine chain could be stapled onto a package signed by a different key.
+- **A failure names what failed.** "The media was altered" and "we could not
+  reach the revocation list" are different statements and never collapse into
+  one boolean.
+
+### Request shapes
+`POST /verify` accepts either a bare proof package, or an envelope
+`{ "package": {...}, "mediaBase64": "..." }` when the media is available for the
+media-leaf check. The media cannot travel *inside* the package: the schema sets
+`additionalProperties: false` at the root, so an extra key would correctly make a
+genuine package fail validation.
 
 ## Limitations (must ship with every verifier UI)
 Per `research/02` §7 and `research/06` §7: a passing package proves the bundle of media+metadata is **unaltered since capture and signed by a specific (hardware-backed) key** — it does **not** prove the depicted event was real/unstaged, and it is **not** a standalone legal certificate (India's BSA 2023 §63 requires human dual-certification). The verdict wording must never overclaim.

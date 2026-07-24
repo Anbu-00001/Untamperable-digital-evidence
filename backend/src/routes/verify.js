@@ -23,7 +23,16 @@ const { validate } = loadValidator();
  * rather than passing vacuously.
  */
 router.post('/', (req, res) => {
-  const valid = validate(req.body);
+  // Two accepted shapes:
+  //   (a) a bare proof package, or
+  //   (b) an envelope { package, mediaBase64 } when the media is supplied too.
+  // The media cannot ride inside the package itself: the schema sets
+  // `additionalProperties: false` at the root, so an extra key would — rightly —
+  // make a genuine package fail validation.
+  const isEnvelope = req.body && typeof req.body === 'object' && req.body.package !== undefined;
+  const pkg = isEnvelope ? req.body.package : req.body;
+
+  const valid = validate(pkg);
   if (!valid) {
     return res.status(400).json({
       verdict: 'invalid_format',
@@ -31,14 +40,11 @@ router.post('/', (req, res) => {
     });
   }
 
-  // Media may be supplied as base64 alongside the package so the media leaf can
-  // be recomputed; without it that one check reports `unavailable`.
-  let mediaBytes;
-  if (typeof req.body.mediaBase64 === 'string') {
-    mediaBytes = Buffer.from(req.body.mediaBase64, 'base64');
-  }
+  // Without the media, the media leaf check reports `unavailable`, never `pass`.
+  const mediaBase64 = isEnvelope ? req.body.mediaBase64 : undefined;
+  const mediaBytes = typeof mediaBase64 === 'string' ? Buffer.from(mediaBase64, 'base64') : undefined;
 
-  const { checks, notes, verdict } = verifyProofPackage(req.body, mediaBytes);
+  const { checks, notes, verdict } = verifyProofPackage(pkg, mediaBytes);
 
   return res.status(200).json({
     verdict,

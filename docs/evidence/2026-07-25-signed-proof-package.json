@@ -1,0 +1,77 @@
+{
+  "schemaUrn": "urn:realitylock:proof-package:1.0.0",
+  "schemaVersion": "1.0.0",
+  "eventId": "d3a3ce84-5b5d-44d5-805d-0be18d66ae43",
+  "media": {
+    "mimeType": "image/jpeg",
+    "byteLength": 1538709,
+    "sha256": "07d7b05939c69d5f4540a2f854ec21084bd9dde91f3b93da98d81e029491e9f1",
+    "storageRef": null
+  },
+  "metadata": {
+    "location": {
+      "latitude": 12.913,
+      "longitude": 80.14,
+      "accuracyMeters": 20,
+      "altitudeMeters": null,
+      "provider": "fused",
+      "fixAgeMillis": 0,
+      "isMock": false,
+      "_redacted": "lat/lon rounded to 3dp (~100 m) before committing"
+    },
+    "timestamp": {
+      "wallClockMillis": 1784920373888,
+      "iso8601": "2026-07-24T19:12:53.888Z",
+      "elapsedRealtimeNanos": 1967490154626820,
+      "wallClockOffsetMillis": 1782952883734,
+      "gpsTimeMillis": 1784920377313
+    },
+    "motion": {
+      "accelerometer": [
+        1.5559500455856323,
+        0.9610500335693359,
+        9.253050804138184
+      ],
+      "gyroscope": [
+        0.0019249999895691872,
+        0.0005499999970197678,
+        -0.0004124999977648258
+      ],
+      "sampleElapsedRealtimeNanos": 1967490421337958
+    },
+    "device": {
+      "installId": "52f2fcbd-960a-4e85-a27d-52d200e4f97c",
+      "model": "CPH2591",
+      "manufacturer": "OPPO",
+      "sdkInt": 35,
+      "appVersionName": "0.1.0",
+      "appVersionCode": 1
+    }
+  },
+  "canonicalization": "RFC8785",
+  "merkle": {
+    "algorithm": "SHA-256",
+    "scheme": "2-leaf",
+    "leaves": {
+      "media": "07d7b05939c69d5f4540a2f854ec21084bd9dde91f3b93da98d81e029491e9f1",
+      "metadata": "549df5e7d61103fe97f9aa45f95074c4a549dc0a64d47073cb829336845bae67"
+    },
+    "root": "f8673d9542af1dbd5f5ba382919f09219909620f64b7e71b75484d60bde55562"
+  },
+  "signature": {
+    "algorithm": "SHA256withECDSA",
+    "value": "MEQCIDRPOg1ArwEqQv3DUHIXEoVqB2vZbLncwj5yLOOrn3WB\u2026(truncated)",
+    "publicKey": {
+      "format": "X.509",
+      "curve": "secp256r1",
+      "value": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbgNqT7EQVSRktR6BIutO7ddCj7wL5zuBwVJoJqCnGggwrG4cHfPS7cO/R+E6WI1IugmZTw5c8McyGGr6ZzEZkg=="
+    },
+    "attestationCertificateChain": [
+      "MIICpTCCAkugAwIBAgIBATAKBggqhkjOPQQDAjA5MQwwCgYDVQQMDANURUUxKTAn\u2026(truncated)",
+      "MIIB9DCCAXmgAwIBAgIQI5oEqh0Vl0cGWWC6M8NAjTAKBggqhkjOPQQDAjA5MQww\u2026(truncated)",
+      "MIIDkzCCAXugAwIBAgIQHPdGXCctF05xy/c3A6uqQjANBgkqhkiG9w0BAQsFADAb\u2026(truncated)",
+      "MIIFHDCCAwSgAwIBAgIJAPHBcqaZ6vUdMA0GCSqGSIb3DQEBCwUAMBsxGTAXBgNV\u2026(truncated)"
+    ],
+    "_redacted": "4 certificates; each truncated to 64 base64 chars. The full chain identifies this specific handset's attestation key."
+  }
+}

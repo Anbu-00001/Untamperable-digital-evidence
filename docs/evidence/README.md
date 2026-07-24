@@ -5,7 +5,7 @@ Real proof sidecars pulled off a physical device, kept so that claims made in
 A project about tamper-evident evidence should not ask to be believed.
 
 **Device:** OnePlus CPH2591 (OPPO, Android 15, `sdkInt` 35), USB-attached.
-**Date:** 2026-07-24. **Build:** `appVersionName` 0.1.0.
+**Dates:** 2026-07-24 (Phase 2) and 2026-07-25 (Phase 3). **Build:** `appVersionName` 0.1.0.
 
 Pulled with:
 ```bash
@@ -19,12 +19,17 @@ adb shell run-as com.realitylock.app cat files/captures/<eventId>.json
 > photographs of a real person's surroundings and are not needed to verify any
 > claim here.
 
-## The two files
+## The files
 
 | File | What it shows |
 |---|---|
 | `2026-07-24-before-clockbase-fix.json` | The camera-clock-base defect, in production output |
 | `2026-07-24-after-clockbase-fix.json` | The same capture path after the fix |
+| `2026-07-25-signed-proof-package.json` | A complete Phase-3 package: Merkle root, ECDSA signature, attestation chain |
+
+> The signed package additionally has its `signature.value` and each attestation
+> certificate truncated. The chain identifies this specific handset's hardware
+> key; the structure is what is being evidenced, not the key itself.
 
 ### Before — a capture backdated by 9.66 days
 
@@ -101,3 +106,30 @@ VALID against proof-package.schema.json
 Every failure is a field Phase 3 has not built yet; nothing the serializer emits
 is rejected. `EventSerializerSchemaTest` enforces this property in CI against
 this same schema file.
+
+
+## Phase 3 — a complete signed package (2026-07-25)
+
+`2026-07-25-signed-proof-package.json` is a real capture, signed by a key
+generated inside the device's Keystore. Verified independently in Node against
+the Kotlin producer's output:
+
+```
+PASS  media hash matches the JPEG on disk
+PASS  metadata leaf = SHA-256(RFC8785(metadata))
+PASS  merkle root = SHA-256(rawMedia || rawMetadata)
+PASS  ECDSA signature verifies over the root bytes
+PASS  signature public key == attestation leaf public key
+PASS  certificate chain signatures link leaf->root  (4 certs)
+PASS  flipping ONE bit of the JPEG breaks the root
+PASS  changing ONE metadata field breaks the metadata leaf
+```
+
+The attestation chain terminates in a root whose SHA-256 is
+`cedb1cb6dc896ae5ec797348bce9286753c2b38ee71ce0fbe34a9a1248800dfc` — an exact
+match for a certificate published at `https://android.googleapis.com/attestation/root`.
+Google currently publishes **two** roots and this device uses the older one,
+which is why the verifier fetches the root set rather than pinning a value.
+
+Device reported `tier=TRUSTED_ENVIRONMENT` (no StrongBox on this handset), and
+the package records that tier rather than implying the stronger one.

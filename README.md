@@ -58,7 +58,24 @@
 
 **Not yet verified:** behaviour on a device whose camera reports `TIMESTAMP_SOURCE_REALTIME` — that branch is unit-tested but has not run on such hardware.
 
-**Next:** Phase 3 — Cryptographic Core (SHA-256 → canonical metadata hash → Merkle root → hardware-backed ECDSA signature).
+### Phase 3 (Cryptographic Core) — complete, verified on a physical device
+- **Every capture is now a fully-formed, signed proof package**: SHA-256 media leaf (streamed) → RFC 8785 canonical metadata leaf → 2-leaf Merkle root → ECDSA P-256 signature from a key generated inside the Android Keystore.
+- **Hardware key attestation, not Play Integrity** ([ADR-0004](docs/design/adr/ADR-0004-attestation-strategy.md)) — a deliberate deviation from `research/08` #16 that costs **$0** instead of $25 and certifies the claim the package actually makes. Proven on the device: `tier=TRUSTED_ENVIRONMENT`, 4-certificate chain whose root SHA-256 **exactly matches** one published at `android.googleapis.com/attestation/root`.
+- **Backend `/verify` performs real cryptography**: media leaf, metadata leaf, Merkle root, ECDSA signature, attestation chain linkage, and `attestationKeyBinding` — the check that the attested key *is* the signing key, without which a genuine chain could be stapled onto someone else's package.
+- **74 tests** (63 Android + 11 backend), including a **cross-implementation Merkle vector** asserted identically in Kotlin and Node so the two can never silently drift.
+
+**Tamper detection, demonstrated end-to-end:**
+```
+1. GENUINE package + genuine media   → all crypto checks pass
+2. ONE BIT flipped in the JPEG       → verdict failed, mediaHashMatch fail
+3. Latitude altered in metadata      → verdict failed, metadataHashMatch fail
+4. Media not supplied                → mediaHashMatch unavailable (never "pass")
+```
+A backend test also covers the subtle case: an attacker who edits metadata **and** recomputes the leaf and root so the tree is internally consistent still fails `signatureValid` — which is exactly why the root is signed.
+
+**Honest limits:** the verdict is `incomplete`, never `verified`, while `timestampPlausible`/`locationPlausible` remain Phase 4/5 — a passing package is not allowed to overclaim. Motion binding is usually 1–4 ms from the shutter but **intermittently reaches ~270–490 ms**; the 500 ms guard keeps it truthful and the exact offset travels in the package. Key attestation also does not prove the *running app* is unmodified, unlike Play Integrity's device-integrity verdict.
+
+**Next:** Phase 4 — location/sensor integrity and the ELA/EXIF layer.
 
 ## Quick start
 ```bash

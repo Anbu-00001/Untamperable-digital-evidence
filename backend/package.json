@@ -8,7 +8,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "validate:schema": "node scripts/validate-schema.js"
+    "validate:schema": "node scripts/validate-schema.js",
+    "test": "node --test test/*.test.js"
   },
   "engines": {
     "node": ">=18"

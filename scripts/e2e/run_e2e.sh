@@ -65,8 +65,19 @@ else
 fi
 
 # --------------------------------------------------------------------------
+step "2b. Backend verifier unit tests"
+if (cd backend && npm test >"$WORK/backend-test.log" 2>&1); then
+  BT="$(grep -c '^ok ' "$WORK/backend-test.log" 2>/dev/null || echo '?')"
+  ok "$BT backend crypto tests pass (incl. the cross-implementation Merkle vector)"
+else
+  bad "backend verifier tests failed"
+  grep -E '^not ok|AssertionError|expected' "$WORK/backend-test.log" | head -10
+fi
+
+# --------------------------------------------------------------------------
 step "3. Backend boots and serves /health"
-(cd backend && PORT="$PORT" NODE_ENV=test npm start >"$WORK/backend.log" 2>&1) &
+# The media travels inline as base64 for /verify, so raise the body cap.
+(cd backend && PORT="$PORT" NODE_ENV=test MAX_JSON_BYTES=16777216 npm start >"$WORK/backend.log" 2>&1) &
 BACKEND_PID=$!
 for _ in $(seq 1 40); do
   curl -sf "$BASE_URL/health" >/dev/null 2>&1 && break
@@ -99,7 +110,10 @@ else
     step "5. Driving $CAPTURES captures on the device"
     adb -s "$DEVICE" shell am force-stop "$PKG"
     adb -s "$DEVICE" shell am start -n "$PKG/.ui.MainActivity" >/dev/null 2>&1
-    sleep 5
+    # Let the camera bind and the sensor stream reach steady state. A shutter
+    # fired immediately after launch can precede the first sensor delivery, in
+    # which case the skew guard correctly records motion as absent.
+    sleep 10
 
     # Find the shutter by its label rather than by fixed coordinates, so this
     # keeps working if the layout changes.
@@ -154,33 +168,50 @@ for m in re.finditer(r'text=\"([^\"]*)\"[^>]*?bounds=\"\[(\d+),(\d+)\]\[(\d+),(\
     done
 
     # ------------------------------------------------------------------
-    step "7. Backend accepts the real captures"
+    step "7. Backend verifies the real captures cryptographically"
     for f in "$WORK/events"/*.json; do
       [ -e "$f" ] || continue
-      # Phase 2 output is a prefix, so /proof is expected to reject it as
-      # incomplete until Phase 3 adds merkle/signature. What is being tested is
-      # that the backend reads the same contract and says so precisely.
-      CODE="$(curl -s -o "$WORK/proof.out" -w '%{http_code}' -X POST "$BASE_URL/proof" \
-              -H 'Content-Type: application/json' --data-binary "@$f")"
-      REASON="$(python3 -c "
+      EVENT_ID="$(basename "$f" .json)"
+      adb -s "$DEVICE" exec-out run-as "$PKG" cat "files/captures/$EVENT_ID.jpg" > "$WORK/media.jpg" 2>/dev/null
+
+      # Envelope form: the media travels beside the package, never inside it —
+      # the schema forbids extra root properties, and rightly so.
+      python3 - "$f" "$WORK/media.jpg" "$WORK/envelope.json" <<'PY'
+import base64, json, sys
+pkg = json.load(open(sys.argv[1]))
+media = open(sys.argv[2], 'rb').read()
+json.dump({"package": pkg, "mediaBase64": base64.b64encode(media).decode()}, open(sys.argv[3], 'w'))
+PY
+      RESP="$(curl -s -X POST "$BASE_URL/verify" -H 'Content-Type: application/json' \
+              --data-binary "@$WORK/envelope.json")"
+      SUMMARY="$(printf '%s' "$RESP" | python3 -c "
 import json,sys
-try:
-  d=json.load(open('$WORK/proof.out'))
-  errs=d.get('errors') or []
-  print('; '.join(sorted({e.get('message','') for e in errs})) if errs else d.get('persistence',''))
-except Exception: print('(unparseable)')")"
-      case "$CODE" in
-        200|201) ok "POST /proof → $CODE ($REASON)" ;;
-        400|422) ok "POST /proof → $CODE, correctly reports the Phase-3 gap: $REASON" ;;
-        *)       bad "POST /proof → $CODE ($REASON)" ;;
+d=json.load(sys.stdin); c=d.get('checks',{})
+crypto=['mediaHashMatch','metadataHashMatch','merkleRootMatch','signatureValid',
+        'attestationPresent','attestationChainValid','attestationKeyBinding']
+bad=[k for k in crypto if c.get(k)!='pass']
+print(('OK ' if not bad else 'BAD ')+d.get('verdict','?')+' '+(','.join(bad) if bad else 'all crypto checks pass'))
+")"
+      case "$SUMMARY" in
+        OK*) ok "POST /verify → ${SUMMARY#OK }" ;;
+        *)   bad "POST /verify → ${SUMMARY#BAD }" ;;
       esac
 
-      VCODE="$(curl -s -o "$WORK/verify.out" -w '%{http_code}' -X POST "$BASE_URL/verify" \
-               -H 'Content-Type: application/json' --data-binary "@$f")"
-      if [ "$VCODE" = "200" ] || [ "$VCODE" = "400" ] || [ "$VCODE" = "422" ]; then
-        ok "POST /verify → $VCODE ($(head -c 100 "$WORK/verify.out"))"
+      # Tamper: one flipped bit must be detected.
+      python3 - "$f" "$WORK/media.jpg" "$WORK/tampered.json" <<'PY'
+import base64, json, sys
+pkg = json.load(open(sys.argv[1]))
+media = bytearray(open(sys.argv[2], 'rb').read())
+media[len(media)//2] ^= 0x01
+json.dump({"package": pkg, "mediaBase64": base64.b64encode(bytes(media)).decode()}, open(sys.argv[3], 'w'))
+PY
+      TVERDICT="$(curl -s -X POST "$BASE_URL/verify" -H 'Content-Type: application/json' \
+                  --data-binary "@$WORK/tampered.json" \
+                  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('verdict'),d.get('checks',{}).get('mediaHashMatch'))")"
+      if [ "$TVERDICT" = "failed fail" ]; then
+        ok "one flipped bit in the JPEG is detected (verdict=failed, mediaHashMatch=fail)"
       else
-        bad "POST /verify → $VCODE"
+        bad "tampered media was NOT detected (got: $TVERDICT)"
       fi
       break   # one representative round-trip is enough
     done
