@@ -1,10 +1,19 @@
 package com.realitylock.app
 
 import android.app.Application
+import com.realitylock.app.core.di.AppContainer
 
 /**
- * Application entry point. Intentionally empty for the Phase-1 skeleton;
- * dependency-graph wiring (repositories, WorkManager configuration, crypto
- * key bootstrap) is added in later phases.
+ * Application entry point. Owns the manual dependency graph (see [AppContainer]);
+ * crypto key bootstrap is added in Phase 3.
  */
-class RealityLockApplication : Application()
+class RealityLockApplication : Application() {
+
+    lateinit var container: AppContainer
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+        container = AppContainer(this)
+    }
+}

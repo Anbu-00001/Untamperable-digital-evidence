@@ -5,7 +5,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
+    // KSP/Room are deferred to Phase 5 — see docs/design/adr/ADR-0003-local-event-store.md
+    // alias(libs.plugins.ksp)
 }
 
 // --------------------------------------------------------------------------
@@ -92,6 +93,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.coroutines.android)
 
@@ -106,9 +108,11 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
 
     // ---- Local queue (Phase 2) ----
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
+    // Implemented as a dependency-free JSON sidecar store; Room + KSP are
+    // deferred to Phase 5. See docs/design/adr/ADR-0003-local-event-store.md.
+    // implementation(libs.androidx.room.runtime)
+    // implementation(libs.androidx.room.ktx)
+    // ksp(libs.androidx.room.compiler)
 
     // ---- Background sync (Phase 5) ----
     // implementation(libs.androidx.work.runtime.ktx)
@@ -131,6 +135,9 @@ dependencies {
     // ---- Testing ----
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
+    // Production uses Android's built-in org.json; android.jar's stub throws in
+    // unit tests, so the real implementation is substituted on the test classpath.
+    testImplementation(libs.org.json)
     // Robolectric is deferred to Phase 6, where the sensor/location tests that
     // need a simulated Android framework are written. It drags in very large
     // `android-all` artifacts, so keeping it off the test classpath until then
