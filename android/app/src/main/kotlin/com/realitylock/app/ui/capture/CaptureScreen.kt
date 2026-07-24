@@ -40,10 +40,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.realitylock.app.R
 import com.realitylock.app.capture.model.CapturedEvent
 import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
 
@@ -84,19 +86,27 @@ fun CaptureScreen(viewModel: CaptureViewModel, modifier: Modifier = Modifier) {
 
     Column(modifier = modifier.fillMaxSize()) {
         Text(
-            "Reality Lock",
+            stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(16.dp),
         )
 
         TabRow(selectedTabIndex = selectedTab) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Capture") })
+            Tab(
+                selected = selectedTab == 0,
+                onClick = { selectedTab = 0 },
+                text = { Text(stringResource(R.string.tab_capture)) },
+            )
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
-                text = { Text("History (${uiState.events.size})") },
+                text = { Text(stringResource(R.string.tab_history, uiState.events.size)) },
             )
-            Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Device") })
+            Tab(
+                selected = selectedTab == 2,
+                onClick = { selectedTab = 2 },
+                text = { Text(stringResource(R.string.tab_device)) },
+            )
         }
 
         when (selectedTab) {
@@ -166,11 +176,13 @@ private fun CaptureTab(
 
         if (!hasLocationPermission) {
             Text(
-                "Location is not granted — events will be recorded without a location proof.",
+                stringResource(R.string.capture_location_denied_warning),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
-            TextButton(onClick = onRequestPermissions) { Text("Grant location") }
+            TextButton(onClick = onRequestPermissions) {
+                Text(stringResource(R.string.capture_grant_location))
+            }
         }
 
         Button(
@@ -181,19 +193,24 @@ private fun CaptureTab(
             if (uiState.isCapturing) {
                 CircularProgressIndicator(modifier = Modifier.height(18.dp))
                 Spacer(Modifier.height(8.dp))
-                Text("Capturing…")
+                Text(stringResource(R.string.capture_in_progress))
             } else {
-                Text("Capture event")
+                Text(stringResource(R.string.capture_action))
             }
         }
 
         uiState.errorMessage?.let { message ->
             Text(message, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = viewModel::dismissError) { Text("Dismiss") }
+            TextButton(onClick = viewModel::dismissError) {
+                Text(stringResource(R.string.capture_dismiss_error))
+            }
         }
 
         uiState.lastEvent?.let { event ->
-            Text("Last capture", style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.capture_last_capture),
+                style = MaterialTheme.typography.titleMedium,
+            )
             EventCard(event)
         }
     }
@@ -209,25 +226,32 @@ private fun PermissionRequestPanel(
     onRequestPermissions: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Permissions needed", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Camera (required) — captures the photo that the proof is built from. " +
-                "Media is captured in-app only; existing gallery photos can never be imported.",
+            stringResource(R.string.permissions_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            stringResource(R.string.permissions_camera_rationale),
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
-            "Location (optional) — records where the event happened so the proof can " +
-                "include a location claim. Without it, captures still work and the " +
-                "location is recorded as absent, never guessed.",
+            stringResource(R.string.permissions_location_rationale),
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
-            "Motion sensors are read only while this screen is open, and only around " +
-                "the moment of capture.",
+            stringResource(R.string.permissions_motion_note),
             style = MaterialTheme.typography.bodySmall,
         )
         Button(onClick = onRequestPermissions) {
-            Text(if (hasLocationPermission) "Grant camera access" else "Grant access")
+            Text(
+                stringResource(
+                    if (hasLocationPermission) {
+                        R.string.permissions_grant_camera
+                    } else {
+                        R.string.permissions_grant_all
+                    },
+                ),
+            )
         }
     }
 }
@@ -241,7 +265,10 @@ private fun HistoryTab(events: List<CapturedEvent>, onDelete: (String) -> Unit) 
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("No events captured yet.", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                stringResource(R.string.history_empty),
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
         return
     }
@@ -267,16 +294,26 @@ private fun EventCard(event: CapturedEvent, onDelete: (() -> Unit)? = null) {
         ) {
             Text(event.metadata.timestamp.iso8601, style = MaterialTheme.typography.titleSmall)
             Divider()
-            DetailRow("Event ID", event.eventId.take(EVENT_ID_PREVIEW_LENGTH) + "…")
-            DetailRow("Size", "${event.media.byteLength} bytes")
+            DetailRow(
+                stringResource(R.string.event_label_id),
+                stringResource(
+                    R.string.event_id_truncated,
+                    event.eventId.take(EVENT_ID_PREVIEW_LENGTH),
+                ),
+            )
+            DetailRow(
+                stringResource(R.string.event_label_size),
+                stringResource(R.string.event_size_bytes, event.media.byteLength),
+            )
 
             val location = event.metadata.location
             DetailRow(
-                "Location",
+                stringResource(R.string.event_label_location),
                 if (location == null) {
-                    "not recorded"
+                    stringResource(R.string.event_value_not_recorded)
                 } else {
-                    "%.5f, %.5f (±%.0fm)".format(
+                    stringResource(
+                        R.string.event_location_format,
                         location.latitude,
                         location.longitude,
                         location.accuracyMeters,
@@ -285,18 +322,28 @@ private fun EventCard(event: CapturedEvent, onDelete: (() -> Unit)? = null) {
             )
             if (location?.isMock == true) {
                 Text(
-                    "Mock location detected",
+                    stringResource(R.string.event_mock_location_detected),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
 
             val motion = event.metadata.motion
-            DetailRow("Motion", if (motion == null) "not recorded" else "accel + gyro captured")
-            DetailRow("Hash", event.media.sha256 ?: "pending (Phase 3)")
+            DetailRow(
+                stringResource(R.string.event_label_motion),
+                if (motion == null) {
+                    stringResource(R.string.event_value_not_recorded)
+                } else {
+                    stringResource(R.string.event_motion_captured)
+                },
+            )
+            DetailRow(
+                stringResource(R.string.event_label_hash),
+                event.media.sha256 ?: stringResource(R.string.event_hash_pending),
+            )
 
             onDelete?.let {
-                TextButton(onClick = it) { Text("Delete") }
+                TextButton(onClick = it) { Text(stringResource(R.string.history_delete)) }
             }
         }
     }

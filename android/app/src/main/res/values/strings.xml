@@ -1,4 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    All user-facing text lives here, never inline in Compose. Keeping it in one
+    place is what makes the UI reviewable and translatable; a literal in a
+    composable is invisible to both.
+-->
 <resources>
     <string name="app_name">Reality Lock</string>
+
+    <!-- ==================== Capture screen: tabs ==================== -->
+    <string name="tab_capture">Capture</string>
+    <string name="tab_history">History (%1$d)</string>
+    <string name="tab_device">Device</string>
+
+    <!-- ==================== Capture tab ==================== -->
+    <string name="capture_location_denied_warning">Location is not granted — events will be recorded without a location proof.</string>
+    <string name="capture_grant_location">Grant location</string>
+    <string name="capture_in_progress">Capturing…</string>
+    <string name="capture_action">Capture event</string>
+    <string name="capture_dismiss_error">Dismiss</string>
+    <string name="capture_last_capture">Last capture</string>
+
+    <!-- ==================== Permission rationale ====================
+         Itemized per permission (research/06 §3): each one states exactly what
+         is recorded and why, rather than one opaque bundled prompt. -->
+    <string name="permissions_title">Permissions needed</string>
+    <string name="permissions_camera_rationale">Camera (required) — captures the photo that the proof is built from. Media is captured in-app only; existing gallery photos can never be imported.</string>
+    <string name="permissions_location_rationale">Location (optional) — records where the event happened so the proof can include a location claim. Without it, captures still work and the location is recorded as absent, never guessed.</string>
+    <string name="permissions_motion_note">Motion sensors are read only while this screen is open, and only around the moment of capture.</string>
+    <string name="permissions_grant_camera">Grant camera access</string>
+    <string name="permissions_grant_all">Grant access</string>
+
+    <!-- ==================== History tab ==================== -->
+    <string name="history_empty">No events captured yet.</string>
+    <string name="history_delete">Delete</string>
+
+    <!-- ==================== Event card ==================== -->
+    <string name="event_label_id">Event ID</string>
+    <string name="event_id_truncated">%1$s…</string>
+    <string name="event_label_size">Size</string>
+    <string name="event_size_bytes">%1$d bytes</string>
+    <string name="event_label_location">Location</string>
+    <string name="event_value_not_recorded">not recorded</string>
+    <!-- latitude, longitude, accuracy in metres -->
+    <string name="event_location_format">%1$.5f, %2$.5f (±%3$.0fm)</string>
+    <string name="event_mock_location_detected">Mock location detected</string>
+    <string name="event_label_motion">Motion</string>
+    <string name="event_motion_captured">accel + gyro captured</string>
+    <string name="event_label_hash">Hash</string>
+    <string name="event_hash_pending">pending (Phase 3)</string>
+
+    <!-- ==================== Device status / diagnostics ==================== -->
+    <string name="device_section_build">Build configuration</string>
+    <string name="device_app_version">App version</string>
+    <string name="device_app_version_format">%1$s (%2$d)</string>
+    <string name="device_application_id">Application ID</string>
+    <string name="device_backend_base_url">Backend base URL</string>
+    <string name="device_signature_algorithm">Signature algorithm</string>
+    <string name="device_play_integrity_configured">Play Integrity configured</string>
+    <string name="device_section_schema">Proof schema</string>
+    <string name="device_section_capabilities">Device capabilities</string>
+    <string name="device_strongbox">StrongBox secure element</string>
+    <string name="device_camera">Camera</string>
+    <string name="device_gps">GPS</string>
+    <string name="device_accelerometer">Accelerometer</string>
+    <string name="device_gyroscope">Gyroscope</string>
+
+    <!-- ==================== Shared ==================== -->
+    <string name="common_yes">Yes</string>
+    <string name="common_no">No</string>
 </resources>

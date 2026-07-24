@@ -2,7 +2,9 @@ package com.realitylock.app.capture
 
 import com.realitylock.app.capture.SensorSnapshotCollector.Reading
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -42,5 +44,63 @@ class SensorSnapshotCollectorTest {
     fun `handles a single reading`() {
         val readings = listOf(reading(42L))
         assertEquals(42L, SensorSnapshotCollector.nearestTo(readings, target = 1_000_000L)?.elapsedRealtimeNanos)
+    }
+
+    // --- skew tolerance ---
+    // Observed on an emulator: the "nearest" sample was 4.6 SECONDS from the
+    // shutter. Binding that would misrepresent the motion at capture, so a
+    // sample must fall inside a tolerance window to be recorded at all.
+
+    private val oneMillisInNanos = SensorSnapshotCollector.NANOS_PER_MILLI
+
+    @Test
+    fun `a sample inside the tolerance window is accepted`() {
+        val target = 1_000L * oneMillisInNanos
+        val sample = reading(target + 100L * oneMillisInNanos) // 100 ms away
+
+        assertTrue(
+            SensorSnapshotCollector.isWithinSkew(
+                sample,
+                target,
+                maxSkewNanos = 500L * oneMillisInNanos,
+            ),
+        )
+    }
+
+    @Test
+    fun `a sample beyond the tolerance window is rejected`() {
+        val target = 1_000L * oneMillisInNanos
+        val sample = reading(target + 4_600L * oneMillisInNanos) // the 4.6 s case
+
+        assertFalse(
+            SensorSnapshotCollector.isWithinSkew(
+                sample,
+                target,
+                maxSkewNanos = 500L * oneMillisInNanos,
+            ),
+        )
+    }
+
+    @Test
+    fun `tolerance is symmetric around the capture instant`() {
+        val target = 10_000L * oneMillisInNanos
+        val maxSkewNanos = 500L * oneMillisInNanos
+
+        val before = reading(target - 400L * oneMillisInNanos)
+        val after = reading(target + 400L * oneMillisInNanos)
+        val tooEarly = reading(target - 900L * oneMillisInNanos)
+
+        assertTrue(SensorSnapshotCollector.isWithinSkew(before, target, maxSkewNanos))
+        assertTrue(SensorSnapshotCollector.isWithinSkew(after, target, maxSkewNanos))
+        assertFalse(SensorSnapshotCollector.isWithinSkew(tooEarly, target, maxSkewNanos))
+    }
+
+    @Test
+    fun `a sample exactly at the tolerance boundary is accepted`() {
+        val target = 5_000L * oneMillisInNanos
+        val maxSkewNanos = 500L * oneMillisInNanos
+        val boundary = reading(target + maxSkewNanos)
+
+        assertTrue(SensorSnapshotCollector.isWithinSkew(boundary, target, maxSkewNanos))
     }
 }

@@ -28,9 +28,9 @@ function createApp() {
   }
   app.use(express.json({ limit: config.maxJsonBytes }));
 
-  app.use('/health', healthRouter);
-  app.use('/proof', proofRouter);
-  app.use('/verify', verifyRouter);
+  app.use(config.routes.health, healthRouter);
+  app.use(config.routes.proof, proofRouter);
+  app.use(config.routes.verify, verifyRouter);
 
   // 404 fallthrough.
   app.use((req, res) => {

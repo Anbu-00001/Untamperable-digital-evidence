@@ -61,5 +61,28 @@ Defaults live in `android/gradle.properties`. To override for your machine, copy
 
 ---
 
-## 5. What each part proves (keep honest)
+## 5. Troubleshooting
+
+**`NoSuchMethodError: No direct method <init>(...)` at app start.**
+Seen after changing a constructor that has default arguments (Kotlin generates a
+synthetic constructor whose signature encodes the parameter list, so adding a
+parameter changes it). Gradle's **build cache** can restore a stale caller
+compiled against the old signature, and `clean` alone does not always evict it.
+Fix:
+```bash
+cd android
+rm -rf app/build .gradle
+./gradlew --no-build-cache :app:assembleDebug
+adb uninstall com.realitylock.app && adb install app/build/outputs/apk/debug/app-debug.apk
+```
+
+**Captures appear to do nothing on an emulator.** Two causes seen in practice:
+a system ANR dialog (e.g. "Pixel Launcher isn't responding") silently swallowing
+taps — dismiss it and retry; and each capture taking ~10 s because the location
+request runs its full timeout when the emulator never supplies a GPS fix.
+`adb emu geo fix` reports `OK` but frequently does not register on a headless
+emulator, so treat the location-populated path as **untested until run on real
+hardware**.
+
+## 6. What each part proves (keep honest)
 The cryptographic pipeline delivers **tamper-evidence** (integrity + authenticity of the captured bundle), **not** proof the depicted event is real, and **not** a standalone legal certificate. See [`docs/design/PROOF_PACKAGE_SPEC.md`](docs/design/PROOF_PACKAGE_SPEC.md) → Limitations, and `research/06_legal_standards_compliance.md` §7.

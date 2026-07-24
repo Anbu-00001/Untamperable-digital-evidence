@@ -25,6 +25,17 @@ compileSdk = "36"                   # Android 16 (API 36)
 minSdk = "28"                       # API 28 (Android 9) — required floor for StrongBox-backed keys
 targetSdk = "36"
 
+# --- JVM toolchain ---
+# Single source for source/target compatibility AND the Kotlin jvmTarget, so the
+# three can never drift apart in app/build.gradle.kts.
+javaVersion = "17"
+
+# --- App version (the shipped artifact's own version, not a dependency's) ---
+# Kept here so `versionName`/`versionCode` are never literals in a module build
+# file. versionName must stay in step with backend/package.json's "version".
+appVersionName = "0.1.0"
+appVersionCode = "1"
+
 # --- AndroidX / Jetpack core ---
 # NOTE ON THE AGP-8.13 CEILING: Kotlin 2.3.0's max supported AGP is 8.13.0, so
 # this project stays on AGP 8.13.0. The very latest AndroidX has moved past that:

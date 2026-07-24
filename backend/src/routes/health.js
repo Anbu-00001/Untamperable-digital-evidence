@@ -8,7 +8,7 @@ const router = express.Router();
 router.get('/', (req, res) => {
   res.json({
     status: 'ok',
-    service: 'reality-lock-backend',
+    service: config.serviceName,
     env: config.env,
     time: new Date().toISOString(),
   });

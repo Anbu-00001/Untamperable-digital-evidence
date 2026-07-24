@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const config = require('../config');
 const { loadValidator } = require('../services/proofSchema');
 
 const router = express.Router();
@@ -26,7 +27,7 @@ router.post('/', (req, res) => {
   return res.status(200).json({
     validated: true,
     eventId: req.body.eventId,
-    persistence: 'not_implemented_phase_5',
+    persistence: config.notImplementedStatus,
   });
 });
 

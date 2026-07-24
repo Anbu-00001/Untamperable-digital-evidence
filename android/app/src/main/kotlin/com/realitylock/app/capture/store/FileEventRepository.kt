@@ -1,6 +1,7 @@
 package com.realitylock.app.capture.store
 
 import com.realitylock.app.capture.model.CapturedEvent
+import com.realitylock.app.core.config.CaptureConfig
 import java.io.File
 
 /**
@@ -52,6 +53,11 @@ class FileEventRepository(private val baseDir: File) : EventRepository {
     private fun metadataFile(eventId: String) = File(baseDir, eventId + METADATA_EXTENSION)
 
     companion object {
-        const val METADATA_EXTENSION = ".json"
+        /**
+         * Sidecar extension. Sourced from [CaptureConfig] so it cannot drift
+         * from [CaptureConfig.MEDIA_EXTENSION_JPEG], which defines the other
+         * half of the same on-disk layout.
+         */
+        const val METADATA_EXTENSION = CaptureConfig.METADATA_EXTENSION_JSON
     }
 }

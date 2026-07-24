@@ -23,6 +23,7 @@ import kotlin.math.abs
 class SensorSnapshotCollector(
     context: Context,
     private val bufferSize: Int = CaptureConfig.MOTION_BUFFER_SIZE,
+    private val maxSkewMillis: Long = CaptureConfig.MOTION_MAX_SKEW_MILLIS,
 ) : SensorEventListener {
 
     /** A single sensor sample stamped on the monotonic clock. */
@@ -67,7 +68,8 @@ class SensorSnapshotCollector(
 
     /**
      * Returns the motion sample closest to [targetElapsedRealtimeNanos] (the
-     * camera's capture timestamp), or null if no accelerometer data has arrived.
+     * camera's capture timestamp), or null when no sample lies close enough to
+     * honestly describe that instant (see [CaptureConfig.MOTION_MAX_SKEW_MILLIS]).
      */
     fun snapshotNearest(targetElapsedRealtimeNanos: Long): MotionData? {
         val accel: Reading?
@@ -76,10 +78,18 @@ class SensorSnapshotCollector(
             accel = nearestTo(accelReadings.toList(), targetElapsedRealtimeNanos)
             gyro = nearestTo(gyroReadings.toList(), targetElapsedRealtimeNanos)
         }
-        if (accel == null) return null
+        val maxSkewNanos = maxSkewMillis * NANOS_PER_MILLI
+        if (accel == null || !isWithinSkew(accel, targetElapsedRealtimeNanos, maxSkewNanos)) {
+            return null
+        }
+        // The gyroscope is included only if it, too, is close to the shutter.
+        val gyroValues = gyro
+            ?.takeIf { isWithinSkew(it, targetElapsedRealtimeNanos, maxSkewNanos) }
+            ?.values
+            .orEmpty()
         return MotionData(
             accelerometer = accel.values,
-            gyroscope = gyro?.values ?: emptyList(),
+            gyroscope = gyroValues,
             sampleElapsedRealtimeNanos = accel.elapsedRealtimeNanos,
         )
     }
@@ -106,11 +116,18 @@ class SensorSnapshotCollector(
         /** x, y, z. */
         const val VECTOR_COMPONENTS: Int = 3
 
+        /** Nanoseconds per millisecond. */
+        const val NANOS_PER_MILLI: Long = 1_000_000L
+
         /**
          * Pure selection logic, extracted so it can be unit tested without the
          * sensor framework: the reading whose timestamp is closest to [target].
          */
         fun nearestTo(readings: List<Reading>, target: Long): Reading? =
             readings.minByOrNull { abs(it.elapsedRealtimeNanos - target) }
+
+        /** True when [reading] sits within [maxSkewNanos] of [target]. */
+        fun isWithinSkew(reading: Reading, target: Long, maxSkewNanos: Long): Boolean =
+            abs(reading.elapsedRealtimeNanos - target) <= maxSkewNanos
     }
 }

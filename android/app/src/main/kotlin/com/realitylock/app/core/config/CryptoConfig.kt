@@ -35,4 +35,15 @@ object CryptoConfig {
      */
     const val MERKLE_LEAVES_IMPLEMENTED: Int = 2
     const val MERKLE_LEAVES_TARGET: Int = 5
+
+    private const val MERKLE_SCHEME_SUFFIX: String = "-leaf"
+
+    /**
+     * The `merkle.scheme` values the proof-package schema accepts
+     * (`enum: ["2-leaf", "5-leaf"]`). Derived from the leaf counts above rather
+     * than written out again, so the string and the number cannot disagree —
+     * Phase 3 writes one of these into every package.
+     */
+    const val MERKLE_SCHEME_IMPLEMENTED: String = "$MERKLE_LEAVES_IMPLEMENTED$MERKLE_SCHEME_SUFFIX"
+    const val MERKLE_SCHEME_TARGET: String = "$MERKLE_LEAVES_TARGET$MERKLE_SCHEME_SUFFIX"
 }

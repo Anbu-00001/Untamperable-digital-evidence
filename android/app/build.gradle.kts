@@ -25,16 +25,24 @@ fun cfg(key: String, fallback: String): String =
         ?: (project.findProperty(key) as String?)
         ?: fallback
 
+// Package identity, declared once. `namespace` (R-class package) and
+// `applicationId` (Play Store identity) are the same value today but remain
+// separately assignable, since they are allowed to diverge later.
+val appPackage = "com.realitylock.app"
+
+// JVM level for javac and kotlinc, from the version catalog (one source).
+val javaVersion = JavaVersion.toVersion(libs.versions.javaVersion.get())
+
 android {
-    namespace = "com.realitylock.app"
+    namespace = appPackage
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.realitylock.app"
+        applicationId = appPackage
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = libs.versions.appVersionCode.get().toInt()
+        versionName = libs.versions.appVersionName.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -66,8 +74,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = javaVersion
+        targetCompatibility = javaVersion
     }
 
     buildFeatures {
@@ -83,7 +91,7 @@ android {
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
+        jvmTarget.set(JvmTarget.fromTarget(javaVersion.toString()))
     }
 }
 

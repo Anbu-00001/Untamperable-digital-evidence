@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const config = require('../config');
 const { loadValidator } = require('../services/proofSchema');
 
 const router = express.Router();
@@ -24,16 +25,17 @@ router.post('/', (req, res) => {
     });
   }
 
+  const pending = config.notImplementedStatus;
   return res.status(200).json({
     verdict: 'incomplete',
     checks: {
       schemaValid: 'pass',
-      mediaHashMatch: 'not_implemented_phase_5',
-      metadataHashMatch: 'not_implemented_phase_5',
-      signatureValid: 'not_implemented_phase_5',
-      timestampPlausible: 'not_implemented_phase_5',
-      locationPlausible: 'not_implemented_phase_5',
-      playIntegrity: 'not_implemented_phase_5',
+      mediaHashMatch: pending,
+      metadataHashMatch: pending,
+      signatureValid: pending,
+      timestampPlausible: pending,
+      locationPlausible: pending,
+      playIntegrity: pending,
     },
   });
 });

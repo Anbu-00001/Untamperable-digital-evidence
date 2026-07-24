@@ -16,7 +16,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.realitylock.app.R
 import com.realitylock.app.core.config.AppConfig
 import com.realitylock.app.core.config.CryptoConfig
 import com.realitylock.app.core.config.ProofPackageConstants
@@ -42,24 +44,49 @@ fun DeviceStatusScreen(modifier: Modifier = Modifier) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text("Build configuration", style = MaterialTheme.typography.titleMedium)
-        StatusRow("App version", "${AppConfig.versionName} (${AppConfig.versionCode})")
-        StatusRow("Application ID", AppConfig.applicationId)
-        StatusRow("Backend base URL", AppConfig.backendBaseUrl)
-        StatusRow("Signature algorithm", CryptoConfig.SIGNATURE_ALGORITHM)
-        StatusRow("Play Integrity configured", yesNo(AppConfig.isPlayIntegrityConfigured))
+        Text(
+            stringResource(R.string.device_section_build),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        StatusRow(
+            stringResource(R.string.device_app_version),
+            stringResource(
+                R.string.device_app_version_format,
+                AppConfig.versionName,
+                AppConfig.versionCode,
+            ),
+        )
+        StatusRow(stringResource(R.string.device_application_id), AppConfig.applicationId)
+        StatusRow(stringResource(R.string.device_backend_base_url), AppConfig.backendBaseUrl)
+        StatusRow(
+            stringResource(R.string.device_signature_algorithm),
+            CryptoConfig.SIGNATURE_ALGORITHM,
+        )
+        StatusRow(
+            stringResource(R.string.device_play_integrity_configured),
+            yesNo(AppConfig.isPlayIntegrityConfigured),
+        )
 
         Spacer(Modifier.height(12.dp))
-        Text("Proof schema", style = MaterialTheme.typography.titleMedium)
+        Text(
+            stringResource(R.string.device_section_schema),
+            style = MaterialTheme.typography.titleMedium,
+        )
         Text(ProofPackageConstants.SCHEMA_URN, style = MaterialTheme.typography.bodySmall)
 
         Spacer(Modifier.height(12.dp))
-        Text("Device capabilities", style = MaterialTheme.typography.titleMedium)
-        StatusRow("StrongBox secure element", yesNo(capabilities.hasStrongBox))
-        StatusRow("Camera", yesNo(capabilities.hasCamera))
-        StatusRow("GPS", yesNo(capabilities.hasGps))
-        StatusRow("Accelerometer", yesNo(capabilities.hasAccelerometer))
-        StatusRow("Gyroscope", yesNo(capabilities.hasGyroscope))
+        Text(
+            stringResource(R.string.device_section_capabilities),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        StatusRow(stringResource(R.string.device_strongbox), yesNo(capabilities.hasStrongBox))
+        StatusRow(stringResource(R.string.device_camera), yesNo(capabilities.hasCamera))
+        StatusRow(stringResource(R.string.device_gps), yesNo(capabilities.hasGps))
+        StatusRow(
+            stringResource(R.string.device_accelerometer),
+            yesNo(capabilities.hasAccelerometer),
+        )
+        StatusRow(stringResource(R.string.device_gyroscope), yesNo(capabilities.hasGyroscope))
     }
 }
 
@@ -74,4 +101,6 @@ private fun StatusRow(label: String, value: String) {
     }
 }
 
-private fun yesNo(value: Boolean): String = if (value) "Yes" else "No"
+@Composable
+private fun yesNo(value: Boolean): String =
+    stringResource(if (value) R.string.common_yes else R.string.common_no)

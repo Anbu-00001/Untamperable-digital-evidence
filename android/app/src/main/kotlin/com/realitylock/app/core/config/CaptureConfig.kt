@@ -21,6 +21,15 @@ object CaptureConfig {
     const val MEDIA_EXTENSION_JPEG: String = ".jpg"
 
     /**
+     * File extension of the JSON metadata sidecar written next to each still
+     * (ADR-0003): an event is `<eventId>.jpg` + `<eventId>.json`. Declared next
+     * to [MEDIA_EXTENSION_JPEG] because the two together define the on-disk
+     * layout that [com.realitylock.app.capture.store.FileEventRepository] and
+     * [com.realitylock.app.capture.MediaFileStore] must agree on.
+     */
+    const val METADATA_EXTENSION_JSON: String = ".json"
+
+    /**
      * Sensor sampling rate. SENSOR_DELAY_GAME (~20 ms) is fast enough to have a
      * fresh accelerometer/gyroscope reading at the shutter without the battery
      * cost of SENSOR_DELAY_FASTEST.
@@ -33,6 +42,18 @@ object CaptureConfig {
      * the capture takes the most recent sample.
      */
     const val MOTION_BUFFER_SIZE: Int = 64
+
+    /**
+     * How far a sensor sample may sit from the capture instant and still be
+     * considered to describe it.
+     *
+     * Without this bound the "nearest" sample can be seconds away (observed on
+     * an emulator, where sensor events are sparse), which would attach motion
+     * data that never corresponded to the shutter. Beyond this window the proof
+     * records motion as absent — an honest omission is worth more than a
+     * misleading reading.
+     */
+    const val MOTION_MAX_SKEW_MILLIS: Long = 500L
 
     /**
      * A location fix older than this is considered too stale to bind to a
