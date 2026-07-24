@@ -18,7 +18,16 @@ import java.io.File
  * Takes a plain [File] rather than a `Context` so it can be exercised in
  * ordinary JVM unit tests against a temporary directory.
  */
-class FileEventRepository(private val baseDir: File) : EventRepository {
+class FileEventRepository(
+    private val baseDir: File,
+    /**
+     * Must match the extension the `MediaFileStore` sharing this [baseDir] was
+     * built with — the repository reconstructs media paths by the same rule.
+     * Declared here rather than assumed so the coupling is visible at the
+     * single site that constructs both.
+     */
+    private val mediaExtension: String = CaptureConfig.MEDIA_EXTENSION_JPEG,
+) : EventRepository {
 
     init {
         if (!baseDir.exists()) baseDir.mkdirs()
@@ -33,24 +42,34 @@ class FileEventRepository(private val baseDir: File) : EventRepository {
         baseDir.listFiles { file -> file.isFile && file.name.endsWith(METADATA_EXTENSION) }
             .orEmpty()
             // A single corrupt sidecar must not take down the whole history view.
-            .mapNotNull { file -> runCatching { EventSerializer.fromJson(file.readText()) }.getOrNull() }
+            .mapNotNull { file -> readEvent(file.nameWithoutExtension) }
             .sortedByDescending { it.metadata.timestamp.wallClockMillis }
 
-    override fun findById(eventId: String): CapturedEvent? {
-        val file = metadataFile(eventId)
-        if (!file.exists()) return null
-        return runCatching { EventSerializer.fromJson(file.readText()) }.getOrNull()
-    }
+    override fun findById(eventId: String): CapturedEvent? = readEvent(eventId)
 
     override fun delete(eventId: String): Boolean {
-        val metadata = metadataFile(eventId)
-        val event = findById(eventId)
-        val mediaDeleted = event?.mediaFilePath?.let { File(it).delete() } ?: false
-        val metadataDeleted = metadata.delete()
+        val mediaDeleted = mediaFile(eventId).delete()
+        val metadataDeleted = metadataFile(eventId).delete()
         return metadataDeleted || mediaDeleted
     }
 
+    private fun readEvent(eventId: String): CapturedEvent? {
+        val file = metadataFile(eventId)
+        if (!file.exists()) return null
+        return runCatching {
+            EventSerializer.fromJson(file.readText(), mediaFile(eventId).absolutePath)
+        }.getOrNull()
+    }
+
     private fun metadataFile(eventId: String) = File(baseDir, eventId + METADATA_EXTENSION)
+
+    /**
+     * The media path is derived here rather than stored in the sidecar — this
+     * is the exact inverse of how `MediaFileStore` names the file, so the
+     * layout has a single source of truth and a moved/restored capture
+     * directory keeps working.
+     */
+    private fun mediaFile(eventId: String) = File(baseDir, eventId + mediaExtension)
 
     companion object {
         /**

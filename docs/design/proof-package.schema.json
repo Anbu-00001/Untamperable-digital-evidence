@@ -58,10 +58,11 @@
     "metadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["location", "timestamp", "device"],
+      "required": ["location", "timestamp", "motion", "device"],
       "properties": {
         "location": {
-          "type": "object",
+          "type": ["object", "null"],
+          "description": "Null when no fix was available (permission denied, indoors, or the bounded request timed out). Required-but-nullable is deliberate: the producer must state explicitly that no location was recorded, so stripping the key yields an invalid document rather than a silently location-less one.",
           "additionalProperties": false,
           "required": ["latitude", "longitude", "accuracyMeters", "isMock"],
           "properties": {
@@ -111,11 +112,15 @@
         },
         "motion": {
           "type": ["object", "null"],
+          "description": "Null when no sensor sample lay close enough to the shutter to honestly describe the capture instant.",
           "additionalProperties": false,
           "required": ["accelerometer", "gyroscope"],
           "properties": {
             "accelerometer": { "$ref": "#/$defs/vector3" },
-            "gyroscope": { "$ref": "#/$defs/vector3" },
+            "gyroscope": {
+              "anyOf": [{ "$ref": "#/$defs/vector3" }, { "type": "null" }],
+              "description": "Null when the device has no gyroscope, or its nearest sample fell outside the skew tolerance while the accelerometer's did not. Never an empty array — absence of a reading must not be confused with a zero-rotation reading."
+            },
             "sampleElapsedRealtimeNanos": { "type": ["integer", "null"] }
           }
         },

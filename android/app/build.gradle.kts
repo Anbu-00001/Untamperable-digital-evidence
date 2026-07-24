@@ -95,6 +95,24 @@ kotlin {
     }
 }
 
+// Unit tests validate real serializer output against the *actual* shared schema
+// file, so the Android producer cannot drift from the backend verifier. The path
+// is passed in rather than hardcoded in the test, and resolved through the same
+// layered `cfg()` chain as every other setting.
+tasks.withType<Test>().configureEach {
+    systemProperty(
+        "realitylock.proofSchemaPath",
+        rootProject.file(cfg("REALITYLOCK_PROOF_SCHEMA_PATH", "../docs/design/proof-package.schema.json"))
+            .absolutePath,
+    )
+    systemProperty(
+        "realitylock.proofExamplePath",
+        rootProject.file(
+            cfg("REALITYLOCK_PROOF_EXAMPLE_PATH", "../docs/design/examples/proof-package.example.json")
+        ).absolutePath,
+    )
+}
+
 dependencies {
     // ---- Core / lifecycle (Phase 1) ----
     implementation(libs.androidx.core.ktx)
@@ -146,6 +164,8 @@ dependencies {
     // Production uses Android's built-in org.json; android.jar's stub throws in
     // unit tests, so the real implementation is substituted on the test classpath.
     testImplementation(libs.org.json)
+    // Validates serializer output against the real proof-package schema.
+    testImplementation(libs.json.schema.validator)
     // Robolectric is deferred to Phase 6, where the sensor/location tests that
     // need a simulated Android framework are written. It drags in very large
     // `android-all` artifacts, so keeping it off the test classpath until then

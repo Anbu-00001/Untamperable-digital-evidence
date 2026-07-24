@@ -22,7 +22,9 @@ import org.json.JSONObject
  *
  * Phase 2 writes the `eventId` / `media` / `metadata` subset. Phase 3 adds
  * `merkle` and `signature`, at which point the document becomes a complete,
- * schema-valid proof package.
+ * schema-valid proof package. `EventSerializerSchemaTest` enforces that the
+ * Phase-2 output is already a valid *prefix* of that package — i.e. every field
+ * it does emit conforms, and it emits nothing the schema forbids.
  */
 object EventSerializer {
 
@@ -32,17 +34,22 @@ object EventSerializer {
         put(KEY_SCHEMA_URN, ProofPackageConstants.SCHEMA_URN)
         put(KEY_SCHEMA_VERSION, ProofPackageConstants.SCHEMA_VERSION)
         put(KEY_EVENT_ID, event.eventId)
-        put(KEY_MEDIA_FILE_PATH, event.mediaFilePath)
         put(KEY_MEDIA, mediaToJson(event.media))
         put(KEY_METADATA, metadataToJson(event.metadata))
         put(KEY_CANONICALIZATION, ProofPackageConstants.JSON_CANONICALIZATION_SCHEME)
     }
 
-    fun fromJson(raw: String): CapturedEvent {
+    /**
+     * [mediaFilePath] is supplied by the caller rather than read from the
+     * document: it is device-local state that the proof package deliberately
+     * does not carry (see [CapturedEvent.mediaFilePath]). The repository owns
+     * the on-disk layout and so reconstructs the path from the event id.
+     */
+    fun fromJson(raw: String, mediaFilePath: String): CapturedEvent {
         val root = JSONObject(raw)
         return CapturedEvent(
             eventId = root.getString(KEY_EVENT_ID),
-            mediaFilePath = root.getString(KEY_MEDIA_FILE_PATH),
+            mediaFilePath = mediaFilePath,
             media = mediaFromJson(root.getJSONObject(KEY_MEDIA)),
             metadata = metadataFromJson(root.getJSONObject(KEY_METADATA)),
         )
@@ -118,13 +125,13 @@ object EventSerializer {
 
     private fun motionToJson(motion: MotionData) = JSONObject().apply {
         put(KEY_ACCELEROMETER, motion.accelerometer.toJsonArray())
-        put(KEY_GYROSCOPE, motion.gyroscope.toJsonArray())
+        putOrNull(KEY_GYROSCOPE, motion.gyroscope?.toJsonArray())
         putOrNull(KEY_SAMPLE_ELAPSED_REALTIME_NANOS, motion.sampleElapsedRealtimeNanos)
     }
 
     private fun motionFromJson(json: JSONObject) = MotionData(
         accelerometer = json.getJSONArray(KEY_ACCELEROMETER).toFloatList(),
-        gyroscope = json.getJSONArray(KEY_GYROSCOPE).toFloatList(),
+        gyroscope = json.optJSONArray(KEY_GYROSCOPE)?.toFloatList(),
         sampleElapsedRealtimeNanos = json.optLongOrNull(KEY_SAMPLE_ELAPSED_REALTIME_NANOS),
     )
 
@@ -173,7 +180,6 @@ object EventSerializer {
     private const val KEY_SCHEMA_URN = "schemaUrn"
     private const val KEY_SCHEMA_VERSION = "schemaVersion"
     private const val KEY_EVENT_ID = "eventId"
-    private const val KEY_MEDIA_FILE_PATH = "mediaFilePath"
     private const val KEY_MEDIA = "media"
     private const val KEY_METADATA = "metadata"
     private const val KEY_CANONICALIZATION = "canonicalization"

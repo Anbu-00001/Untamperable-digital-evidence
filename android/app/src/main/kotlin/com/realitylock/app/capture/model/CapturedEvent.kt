@@ -11,6 +11,12 @@ package com.realitylock.app.capture.model
  */
 data class CapturedEvent(
     val eventId: String,
+    /**
+     * Absolute on-device path to the media. Device-local state, deliberately
+     * **not** part of the serialized proof package: it is not evidence, and
+     * shipping it would leak the device's filesystem layout to every recipient.
+     * The repository reconstructs it from [eventId] on read.
+     */
     val mediaFilePath: String,
     val media: MediaData,
     val metadata: EventMetadata,
@@ -57,7 +63,13 @@ data class TimestampData(
 
 data class MotionData(
     val accelerometer: List<Float>,
-    val gyroscope: List<Float>,
+    /**
+     * Null when there is no usable gyroscope reading. Deliberately nullable
+     * rather than an empty list: `[]` would violate the schema's `vector3`
+     * (`minItems: 3`), and `[0,0,0]` would assert a measured zero rotation that
+     * was never taken.
+     */
+    val gyroscope: List<Float>? = null,
     val sampleElapsedRealtimeNanos: Long? = null,
 )
 

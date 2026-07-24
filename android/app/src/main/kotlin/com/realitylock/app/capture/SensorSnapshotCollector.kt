@@ -83,10 +83,11 @@ class SensorSnapshotCollector(
             return null
         }
         // The gyroscope is included only if it, too, is close to the shutter.
+        // Null (not an empty list) when it is not: absence of a reading must
+        // stay distinguishable from a measured zero rotation.
         val gyroValues = gyro
             ?.takeIf { isWithinSkew(it, targetElapsedRealtimeNanos, maxSkewNanos) }
             ?.values
-            .orEmpty()
         return MotionData(
             accelerometer = accel.values,
             gyroscope = gyroValues,

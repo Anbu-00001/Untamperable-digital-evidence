@@ -46,6 +46,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.realitylock.app.R
+import com.realitylock.app.capture.LocationSource
 import com.realitylock.app.capture.model.CapturedEvent
 import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
 
@@ -327,6 +328,18 @@ private fun EventCard(event: CapturedEvent, onDelete: (() -> Unit)? = null) {
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            // A stale fix is kept, not discarded — but it is never presented as
+            // if it described the capture instant.
+            if (LocationSource.isFixStale(location?.fixAgeMillis)) {
+                Text(
+                    stringResource(
+                        R.string.event_location_stale,
+                        (location?.fixAgeMillis ?: 0L) / MILLIS_PER_SECOND,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
 
             val motion = event.metadata.motion
             DetailRow(
@@ -365,3 +378,4 @@ private fun Context.isGranted(permission: String): Boolean =
 
 private const val PREVIEW_ASPECT_RATIO = 3f / 4f
 private const val EVENT_ID_PREVIEW_LENGTH = 8
+private const val MILLIS_PER_SECOND = 1_000L

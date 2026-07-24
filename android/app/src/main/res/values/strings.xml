@@ -44,6 +44,7 @@
     <!-- latitude, longitude, accuracy in metres -->
     <string name="event_location_format">%1$.5f, %2$.5f (±%3$.0fm)</string>
     <string name="event_mock_location_detected">Mock location detected</string>
+    <string name="event_location_stale">Location fix was %1$d s old at capture — it may not reflect where the event happened.</string>
     <string name="event_label_motion">Motion</string>
     <string name="event_motion_captured">accel + gyro captured</string>
     <string name="event_label_hash">Hash</string>

@@ -8,6 +8,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.realitylock.app.capture.model.LocationData
+import com.realitylock.app.core.config.CaptureConfig
 import com.realitylock.app.core.time.ClockCorrelator
 import kotlinx.coroutines.tasks.await
 
@@ -81,6 +82,22 @@ class LocationSource(context: Context) {
             if (deltaNanos <= 0L) return 0L
             return deltaNanos / ClockCorrelator.NANOS_PER_MILLI
         }
+
+        /**
+         * True when a fix is too old to describe where the capture happened
+         * (see [CaptureConfig.LOCATION_MAX_FIX_AGE_MILLIS]).
+         *
+         * Unlike an out-of-tolerance motion sample, a stale fix is **kept**
+         * rather than discarded: a 30-second-old position is still meaningful
+         * evidence, and `fixAgeMillis` travels in the proof package so a
+         * verifier can weigh it. What staleness must not do is pass silently —
+         * so the capture UI marks it. Pure and parameterised so it is testable
+         * without the location framework.
+         */
+        fun isFixStale(
+            fixAgeMillis: Long?,
+            maxAgeMillis: Long = CaptureConfig.LOCATION_MAX_FIX_AGE_MILLIS,
+        ): Boolean = fixAgeMillis != null && fixAgeMillis > maxAgeMillis
 
         /**
          * `Location.isMock()` was added in API 31; below that the equivalent
