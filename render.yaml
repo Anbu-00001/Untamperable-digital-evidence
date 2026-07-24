@@ -1,0 +1,26 @@
+# Render Blueprint — deploys the Reality Lock backend on the free tier.
+# Phase 0 requires a health-check route answering from a *deployed* URL.
+#
+# Deploy: push this repo to GitHub, then in the Render dashboard choose
+#   New → Blueprint  and point it at the repository. No dashboard fields to
+#   fill in by hand; everything below is declarative.
+#
+# NOTE on rootDir: the service builds from `backend/`, but Render clones the
+# whole repository, so `docs/design/proof-package.schema.json` — which lives
+# OUTSIDE backend/ and is the contract shared with the Android app — is still
+# on disk at runtime. That is deliberate: the schema is never duplicated.
+services:
+  - type: web
+    name: reality-lock-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # PORT is injected by Render; src/config reads it via envInt('PORT', 3000).
+      - key: CORS_ORIGIN
+        value: "*"

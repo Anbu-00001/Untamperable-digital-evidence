@@ -9,6 +9,13 @@ try {
   loadValidator();
 } catch (err) {
   console.error('[reality-lock] Failed to load proof-package schema:', err.message);
+  console.error(
+    `[reality-lock] Looked in: ${config.proofSchemaPath}\n` +
+      '  The schema lives in docs/design/, OUTSIDE backend/, because it is the\n' +
+      '  contract shared with the Android app and is never duplicated. If this is\n' +
+      '  a deployment, make sure docs/design/ ships too (see Dockerfile /\n' +
+      '  render.yaml at the repo root), or set PROOF_SCHEMA_PATH to its location.'
+  );
   process.exit(1);
 }
 

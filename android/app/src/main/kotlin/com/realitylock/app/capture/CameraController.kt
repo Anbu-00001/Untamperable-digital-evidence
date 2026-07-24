@@ -1,6 +1,11 @@
 package com.realitylock.app.capture
 
 import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraMetadata
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -24,8 +29,18 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  */
 class CapturedFrame(
     val jpegBytes: ByteArray,
-    /** Capture instant on the monotonic clock — comparable to sensor timestamps. */
-    val elapsedRealtimeNanos: Long,
+    /**
+     * Raw `ImageInfo.timestamp`, in whatever base the camera declares. It is
+     * **not** safe to compare against sensor timestamps until normalised —
+     * see [isRealtimeTimestampSource] and `ClockCorrelator.toElapsedRealtimeNanos`.
+     */
+    val rawTimestampNanos: Long,
+    /**
+     * True when the camera declares `SENSOR_INFO_TIMESTAMP_SOURCE = REALTIME`
+     * (`CLOCK_BOOTTIME`, same base as sensors). False means `UNKNOWN`, i.e.
+     * `CLOCK_MONOTONIC`, which pauses in deep sleep and must be corrected.
+     */
+    val isRealtimeTimestampSource: Boolean,
 )
 
 /**
@@ -35,11 +50,17 @@ class CapturedFrame(
  *  - **CameraX over raw Camera2**: the requirement here is reliable capture with
  *    a trustworthy timestamp across many devices, not manual sensor control.
  *  - **In-memory capture** via `OnImageCapturedCallback`, so the frame and its
- *    `ImageInfo.timestamp` are obtained before anything touches disk. That
- *    timestamp comes from the same `elapsedRealtimeNanos` clock as sensor
- *    events, which is what makes motion/location correlation meaningful — far
- *    more precise than reading the wall clock inside the callback, which can
- *    lag the shutter by tens of milliseconds.
+ *    `ImageInfo.timestamp` are obtained before anything touches disk — far more
+ *    precise than reading the wall clock inside the callback, which can lag the
+ *    shutter by tens of milliseconds.
+ *
+ * **The camera's clock base is not assumed.** `ImageInfo.timestamp` is only on
+ * the same base as `SensorEvent.timestamp` when the camera declares
+ * `SENSOR_INFO_TIMESTAMP_SOURCE = REALTIME`. A OnePlus CPH2591 declares
+ * `UNKNOWN` (`CLOCK_MONOTONIC`), which pauses during deep sleep — treating it as
+ * boot-time backdated captures by the device's accumulated sleep, measured at
+ * 9.66 days on a real handset. The source is therefore queried per camera and
+ * reported alongside every frame.
  *
  * There is deliberately **no import-from-gallery path**: only frames captured
  * through this controller can become proof packages, which closes the
@@ -50,6 +71,9 @@ class CameraController(private val context: Context) {
     private var imageCapture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private val captureExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
+    /** Set in [bind] from the bound camera's declared characteristics. */
+    private var isRealtimeTimestampSource: Boolean = false
 
     /** True once [bind] has completed and a capture can be taken. */
     val isReady: Boolean get() = imageCapture != null
@@ -69,14 +93,29 @@ class CameraController(private val context: Context) {
             .build()
 
         provider.unbindAll()
-        provider.bindToLifecycle(
+        val camera = provider.bindToLifecycle(
             lifecycleOwner,
             CameraSelector.DEFAULT_BACK_CAMERA,
             preview,
             capture,
         )
+        isRealtimeTimestampSource = readIsRealtimeTimestampSource(camera.cameraInfo)
         imageCapture = capture
     }
+
+    /**
+     * Reads the camera's declared timestamp base. Defaults to `false`
+     * (`CLOCK_MONOTONIC`) when it cannot be determined: that is the conservative
+     * choice, since assuming boot-time when it is not produces a silently
+     * backdated capture, whereas the correction is a no-op on a device that has
+     * not slept.
+     */
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun readIsRealtimeTimestampSource(cameraInfo: CameraInfo): Boolean = runCatching {
+        Camera2CameraInfo.from(cameraInfo)
+            .getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
+            CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+    }.getOrDefault(false)
 
     /** Captures one frame. Throws [ImageCaptureException] on camera failure. */
     suspend fun capture(): CapturedFrame {
@@ -89,7 +128,8 @@ class CameraController(private val context: Context) {
                         try {
                             val frame = CapturedFrame(
                                 jpegBytes = image.toJpegBytes(),
-                                elapsedRealtimeNanos = image.imageInfo.timestamp,
+                                rawTimestampNanos = image.imageInfo.timestamp,
+                                isRealtimeTimestampSource = isRealtimeTimestampSource,
                             )
                             continuation.resume(frame)
                         } catch (t: Throwable) {

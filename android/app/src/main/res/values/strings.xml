@@ -18,6 +18,7 @@
     <string name="capture_in_progress">Capturing…</string>
     <string name="capture_action">Capture event</string>
     <string name="capture_dismiss_error">Dismiss</string>
+    <string name="capture_failed">Capture failed.</string>
     <string name="capture_last_capture">Last capture</string>
 
     <!-- ==================== Permission rationale ====================

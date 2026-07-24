@@ -200,8 +200,13 @@ private fun CaptureTab(
             }
         }
 
-        uiState.errorMessage?.let { message ->
-            Text(message, color = MaterialTheme.colorScheme.error)
+        uiState.error?.let { error ->
+            // The localized wording lives here, not in the ViewModel; the
+            // platform's own message is shown when it has one to offer.
+            Text(
+                error.detail ?: stringResource(R.string.capture_failed),
+                color = MaterialTheme.colorScheme.error,
+            )
             TextButton(onClick = viewModel::dismissError) {
                 Text(stringResource(R.string.capture_dismiss_error))
             }

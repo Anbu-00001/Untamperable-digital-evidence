@@ -20,22 +20,23 @@ Config is env-driven — copy `backend/.env.example` to `backend/.env` only if y
 - **Android Studio** (2026.x / "Narwhal"-era or newer) — bundles a compatible JDK 17+ (this repo targets JDK 17, AGP 8.13.0, Gradle 8.14, Kotlin 2.3.0).
 - Android SDK Platform **API 36** and a device/emulator on **API 28+** (StrongBox-capable emulator image recommended to exercise hardware-backed keys later).
 
-### 2.2 Generate the Gradle wrapper (one-time)
-The wrapper JAR and `gradlew` scripts are **not committed** (they are per-machine binaries). Generate them once:
+### 2.2 Gradle wrapper
+The wrapper (`gradlew`, `gradle/wrapper/gradle-wrapper.jar`) **is committed** — just use it:
 ```bash
 cd android
-# If you have a system Gradle:
-gradle wrapper --gradle-version 8.14
-# Otherwise, just open the `android/` folder in Android Studio — it generates
-# the wrapper and syncs automatically.
+./gradlew :app:assembleDebug
 ```
 
 ### 2.3 Open & build
 1. Open the **`android/`** folder in Android Studio (not the repo root).
-2. Let Gradle sync. **If sync proposes a version adjustment** (AGP/Kotlin/KSP/CameraX), accept it and make the change in **`android/gradle/libs.versions.toml`** only — never in a module build file. Keep `kotlin`, `ksp`, and `composeCompiler` versions identical to each other.
-3. Run the `app` configuration. You should see the **Foundation Status** screen (app version, backend URL, proof schema, and device-capability readouts) — this confirms the config plumbing is wired end to end.
+2. Let Gradle sync. **If sync proposes a version adjustment** (AGP/Kotlin/KSP/CameraX), make the change in **`android/gradle/libs.versions.toml`** only — never in a module build file. Keep `kotlin`, `ksp`, and `composeCompiler` versions identical to each other, and check each library's *minimum AGP* before bumping (the catalog header explains the AGP-8.13 ceiling).
+3. Run the `app` configuration. You should see the **Capture** screen with three tabs — *Capture*, *History*, and *Device*. The Device tab carries the old foundation-status readouts (app version, backend URL, proof schema, device capabilities) and confirms the config plumbing end to end.
 
-> **Note:** the Android project was authored without a local Android SDK/Gradle in the authoring environment, so the first sync in Android Studio is the first real compile. The version catalog is centralized precisely so any needed nudge is a one-line change. (Tracked expectation: a first-sync version tweak is plausible.)
+Useful checks:
+```bash
+./gradlew :app:testDebugUnitTest    # 48 unit tests, incl. real schema validation
+cd ../backend && npm run validate:schema
+```
 
 ### 2.4 Per-machine config overrides (optional)
 Defaults live in `android/gradle.properties`. To override for your machine, copy `android/local.properties.example` → `android/local.properties` (gitignored) and set:
@@ -76,13 +77,37 @@ rm -rf app/build .gradle
 adb uninstall com.realitylock.app && adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
+**Resource compilation fails with `values-*/values-*.xml (No such file or
+directory)`.** Stale incremental merge state. Same remedy as above:
+`rm -rf app/build .gradle` then rebuild.
+
 **Captures appear to do nothing on an emulator.** Two causes seen in practice:
 a system ANR dialog (e.g. "Pixel Launcher isn't responding") silently swallowing
 taps — dismiss it and retry; and each capture taking ~10 s because the location
-request runs its full timeout when the emulator never supplies a GPS fix.
-`adb emu geo fix` reports `OK` but frequently does not register on a headless
-emulator, so treat the location-populated path as **untested until run on real
-hardware**.
+request runs its full timeout when the emulator never supplies a GPS fix
+(`adb emu geo fix` reports `OK` but frequently does not register on a headless
+emulator).
+
+**Timestamps look wrong by days, and `motion` is always `null`.** The camera's
+clock base. Check it:
+```bash
+adb shell dumpsys media.camera | grep -A1 timestampSource
+```
+`[UNKNOWN ]` means the camera stamps frames on `CLOCK_MONOTONIC`, which pauses
+during deep sleep, so a long-idle phone reports a capture instant far in the
+past. The app detects and corrects this (`ClockCorrelator.toElapsedRealtimeNanos`);
+the note matters because **an emulator or freshly rebooted phone has ~0 deep
+sleep and therefore cannot reproduce the bug**. See [`docs/evidence/`](docs/evidence/).
+
+**`adb shell pm grant` fails with `SecurityException`.** ColorOS/OxygenOS block
+shell-granted runtime permissions. Grant them through the in-app permission
+panel on the device instead.
+
+**Reading captures off a device** (debug builds only):
+```bash
+adb shell run-as com.realitylock.app ls -t files/captures/
+adb shell run-as com.realitylock.app cat files/captures/<eventId>.json
+```
 
 ## 6. What each part proves (keep honest)
 The cryptographic pipeline delivers **tamper-evidence** (integrity + authenticity of the captured bundle), **not** proof the depicted event is real, and **not** a standalone legal certificate. See [`docs/design/PROOF_PACKAGE_SPEC.md`](docs/design/PROOF_PACKAGE_SPEC.md) → Limitations, and `research/06_legal_standards_compliance.md` §7.

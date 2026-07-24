@@ -1,0 +1,40 @@
+{
+  "schemaUrn": "urn:realitylock:proof-package:1.0.0",
+  "schemaVersion": "1.0.0",
+  "eventId": "5b1ec4ba-cfe1-45f2-9fbd-ff15e9e84994",
+  "media": {
+    "mimeType": "image/jpeg",
+    "byteLength": 855666,
+    "sha256": null,
+    "storageRef": null
+  },
+  "metadata": {
+    "location": {
+      "latitude": 12.913,
+      "longitude": 80.14,
+      "accuracyMeters": 20,
+      "altitudeMeters": -58.70000076293945,
+      "provider": "fused",
+      "fixAgeMillis": 0,
+      "isMock": false,
+      "_redacted": "lat/lon rounded to 3dp (~100 m) before committing"
+    },
+    "timestamp": {
+      "wallClockMillis": 1784075032329,
+      "iso8601": "2026-07-15T00:23:52.329Z",
+      "elapsedRealtimeNanos": 1122148595567000,
+      "wallClockOffsetMillis": 1782952883734,
+      "gpsTimeMillis": 1784909609679
+    },
+    "motion": null,
+    "device": {
+      "installId": "52f2fcbd-960a-4e85-a27d-52d200e4f97c",
+      "model": "CPH2591",
+      "manufacturer": "OPPO",
+      "sdkInt": 35,
+      "appVersionName": "0.1.0",
+      "appVersionCode": 1
+    }
+  },
+  "canonicalization": "RFC8785"
+}

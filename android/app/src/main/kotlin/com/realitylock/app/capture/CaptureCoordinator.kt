@@ -15,11 +15,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  * and binds the surrounding context into one [CapturedEvent], then persists it.
  *
  * Ordering matters and follows research/02 §8:
- *  1. sample the clock offset as close to the shutter as possible,
- *  2. select the sensor sample nearest the frame's capture instant,
- *  3. resolve location (bounded by a timeout so the UI cannot hang),
- *  4. write the immutable media file,
- *  5. persist the metadata sidecar.
+ *  1. normalise the camera timestamp onto the sensor/boot-time clock base,
+ *  2. sample the clock offset as close to the shutter as possible,
+ *  3. select the sensor sample nearest the frame's capture instant,
+ *  4. resolve location (bounded by a timeout so the UI cannot hang),
+ *  5. write the immutable media file,
+ *  6. persist the metadata sidecar.
  *
  * Phase 3 extends this with hashing, the Merkle root, and the signature; the
  * shape assembled here is already the proof package's media+metadata subset.
@@ -44,15 +45,25 @@ class CaptureCoordinator(
     suspend fun record(frame: CapturedFrame, includeLocation: Boolean): CapturedEvent {
         val eventId = eventIdFactory()
 
-        // 1. Correlate the monotonic capture instant with wall-clock time.
+        // 1. Normalise the camera's timestamp onto the boot-time base that
+        //    sensors and the wall-clock offset both use. Skipping this silently
+        //    backdates the capture by the device's accumulated deep sleep on any
+        //    camera that reports CLOCK_MONOTONIC (see ClockCorrelator).
+        val captureElapsedRealtimeNanos = clockCorrelator.toElapsedRealtimeNanos(
+            rawCaptureNanos = frame.rawTimestampNanos,
+            isRealtimeSource = frame.isRealtimeTimestampSource,
+            deepSleepOffsetNanos = clockCorrelator.deepSleepOffsetNanos(),
+        )
+
+        // 2. Correlate that instant with wall-clock time.
         val offsetMillis = clockCorrelator.snapshotOffsetMillis()
         val wallClockMillis =
-            clockCorrelator.toWallClockMillis(frame.elapsedRealtimeNanos, offsetMillis)
+            clockCorrelator.toWallClockMillis(captureElapsedRealtimeNanos, offsetMillis)
 
-        // 2. Motion sample closest to the shutter (shared monotonic clock base).
-        val motion = sensors.snapshotNearest(frame.elapsedRealtimeNanos)
+        // 3. Motion sample closest to the shutter (now genuinely a shared base).
+        val motion = sensors.snapshotNearest(captureElapsedRealtimeNanos)
 
-        // 3. Location, bounded so a slow GNSS fix cannot stall the capture.
+        // 4. Location, bounded so a slow GNSS fix cannot stall the capture.
         val platformLocation = if (includeLocation) {
             withTimeoutOrNull(CaptureConfig.LOCATION_REQUEST_TIMEOUT_MILLIS) {
                 locationSource.awaitCurrentLocation()
@@ -61,10 +72,10 @@ class CaptureCoordinator(
             null
         }
         val location = platformLocation?.let {
-            LocationSource.toLocationData(it, frame.elapsedRealtimeNanos)
+            LocationSource.toLocationData(it, captureElapsedRealtimeNanos)
         }
 
-        // 4. Write the media exactly once; it is never modified afterwards.
+        // 5. Write the media exactly once; it is never modified afterwards.
         val mediaFile = mediaFileStore.write(eventId, frame.jpegBytes)
 
         val event = CapturedEvent(
@@ -79,7 +90,7 @@ class CaptureCoordinator(
                 timestamp = TimestampData(
                     wallClockMillis = wallClockMillis,
                     iso8601 = ClockCorrelator.toIso8601Utc(wallClockMillis),
-                    elapsedRealtimeNanos = frame.elapsedRealtimeNanos,
+                    elapsedRealtimeNanos = captureElapsedRealtimeNanos,
                     wallClockOffsetMillis = offsetMillis,
                     gpsTimeMillis = platformLocation?.time,
                 ),
@@ -88,7 +99,7 @@ class CaptureCoordinator(
             ),
         )
 
-        // 5. Persist the metadata sidecar next to the media.
+        // 6. Persist the metadata sidecar next to the media.
         return repository.save(event)
     }
 }

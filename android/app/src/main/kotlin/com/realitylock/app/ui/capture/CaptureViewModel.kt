@@ -16,12 +16,19 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * A failed capture. [detail] is the platform's own message and may be absent —
+ * the UI supplies the localized wording, so no user-facing English lives in the
+ * ViewModel, which has no `Context` with which to resolve a string resource.
+ */
+data class CaptureError(val detail: String? = null)
+
 /** Everything the capture screen renders from. */
 data class CaptureUiState(
     val isCapturing: Boolean = false,
     val lastEvent: CapturedEvent? = null,
     val events: List<CapturedEvent> = emptyList(),
-    val errorMessage: String? = null,
+    val error: CaptureError? = null,
 )
 
 /**
@@ -61,7 +68,7 @@ class CaptureViewModel(container: AppContainer) : ViewModel() {
      */
     fun capture(includeLocation: Boolean) {
         if (_uiState.value.isCapturing) return
-        _uiState.update { it.copy(isCapturing = true, errorMessage = null) }
+        _uiState.update { it.copy(isCapturing = true, error = null) }
 
         viewModelScope.launch {
             runCatching {
@@ -71,14 +78,14 @@ class CaptureViewModel(container: AppContainer) : ViewModel() {
                 }
             }.onSuccess { event ->
                 _uiState.update {
-                    it.copy(isCapturing = false, lastEvent = event, errorMessage = null)
+                    it.copy(isCapturing = false, lastEvent = event, error = null)
                 }
                 refreshHistory()
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
                         isCapturing = false,
-                        errorMessage = error.message ?: "Capture failed",
+                        error = CaptureError(detail = error.message),
                     )
                 }
             }
@@ -92,7 +99,7 @@ class CaptureViewModel(container: AppContainer) : ViewModel() {
         }
     }
 
-    fun dismissError() = _uiState.update { it.copy(errorMessage = null) }
+    fun dismissError() = _uiState.update { it.copy(error = null) }
 
     private fun refreshHistory() {
         viewModelScope.launch {
