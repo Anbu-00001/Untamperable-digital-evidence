@@ -135,14 +135,17 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
 
     // ---- Local queue (Phase 2) ----
-    // Implemented as a dependency-free JSON sidecar store; Room + KSP are
-    // deferred to Phase 5. See docs/design/adr/ADR-0003-local-event-store.md.
+    // A dependency-free JSON sidecar store, and it STAYS that way: ADR-0006 §3
+    // keeps it for Phase 5 because sync state is the only mutable data, and
+    // holding it in a separate `<eventId>.sync.json` leaves the signed package
+    // file write-once. Room would also mean re-adding the KSP plugin that
+    // ADR-0003 removed for build time. See also ADR-0003.
     // implementation(libs.androidx.room.runtime)
     // implementation(libs.androidx.room.ktx)
     // ksp(libs.androidx.room.compiler)
 
     // ---- Background sync (Phase 5) ----
-    // implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // ---- Security / integrity (Phase 3 / Phase 4) ----
     // RFC 8785 (JCS) canonicalization, so logically-identical metadata always
@@ -159,13 +162,19 @@ dependencies {
     implementation(libs.androidx.exifinterface)
 
     // ---- Networking (Phase 5) ----
-    // implementation(libs.retrofit.core)
-    // implementation(libs.retrofit.converter.gson)
-    // implementation(libs.okhttp.core)
-    // implementation(libs.okhttp.logging.interceptor)
+    // OkHttp alone, no Retrofit and no JSON converter. The proof package is a
+    // signed document: it is forwarded as the exact bytes that were stored, never
+    // parsed into objects and re-serialized, because a change in number
+    // formatting or escaping would break the metadata hash and look precisely
+    // like tampering (ADR-0006 §2).
+    implementation(libs.okhttp.core)
+    debugImplementation(libs.okhttp.logging.interceptor)
 
     // ---- Verification UI (Phase 5) ----
-    // implementation(libs.zxing.android.embedded)
+    // zxing CORE only — Phase 5 generates QR codes, it does not scan them, so the
+    // journeyapps scanner Activity (and its camera permission) is not a
+    // dependency. See ADR-0006 §4.
+    implementation(libs.zxing.core)
 
     // ---- Testing ----
     testImplementation(libs.junit)
@@ -175,6 +184,10 @@ dependencies {
     testImplementation(libs.org.json)
     // Validates serializer output against the real proof-package schema.
     testImplementation(libs.json.schema.validator)
+    // A real HTTP server on localhost, so the sync client is tested against
+    // actual sockets, status codes and request bodies rather than a mocked
+    // interface that would agree with whatever the client happened to send.
+    testImplementation(libs.okhttp.mockwebserver)
     // Robolectric is deferred to Phase 6, where the sensor/location tests that
     // need a simulated Android framework are written. It drags in very large
     // `android-all` artifacts, so keeping it off the test classpath until then

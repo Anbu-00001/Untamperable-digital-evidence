@@ -2,12 +2,19 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const crypto = require('crypto');
 const canonicalize = require('canonicalize');
 
-const { merkleRoot2Leaf, verifyProofPackage, PASS, FAIL, UNAVAILABLE } =
+const { merkleRoot2Leaf, verifyProofPackage, DECISIVE_CHECKS, PASS, FAIL, UNAVAILABLE } =
   require('../src/services/proofVerifier');
 const { sha256Hex } = require('../src/services/hashService');
+const { haversineMeters, impliedSpeedKmh } = require('../src/services/plausibility');
+
+/**
+ * A fixed "verification time", injected so the timestamp-plausibility tests do
+ * not depend on when the suite happens to run. Chosen just after the fixture's
+ * capture instant below.
+ */
+const NOW = 1784812400000;
 
 /**
  * The cross-implementation test vector, asserted identically here and in
@@ -51,67 +58,9 @@ test('Merkle concatenates raw digest bytes, not hex text', () => {
 
 // --- end-to-end over a synthetic but genuinely signed package ---------------
 
-/** Builds a real signed package with an ephemeral P-256 key. */
-function buildSignedPackage() {
-  const media = Buffer.from('a small pretend JPEG');
-  const mediaHash = sha256Hex(media);
-
-  const metadata = {
-    location: null,
-    timestamp: {
-      wallClockMillis: 1784812345678,
-      iso8601: '2026-07-23T09:12:25.678Z',
-      elapsedRealtimeNanos: 894512000000000,
-      wallClockOffsetMillis: 1783917833678,
-      gpsTimeMillis: null,
-    },
-    motion: null,
-    device: {
-      installId: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
-      model: 'CPH2591',
-      manufacturer: 'OnePlus',
-      sdkInt: 35,
-      appVersionName: '0.1.0',
-      appVersionCode: 1,
-    },
-  };
-  const metadataHash = sha256Hex(Buffer.from(canonicalize(metadata), 'utf8'));
-  const root = merkleRoot2Leaf(mediaHash, metadataHash);
-
-  const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-  const signature = crypto
-    .createSign('SHA256')
-    .update(Buffer.from(root, 'hex'))
-    .sign({ key: privateKey, dsaEncoding: 'der' });
-
-  return {
-    media,
-    pkg: {
-      schemaUrn: 'urn:realitylock:proof-package:1.0.0',
-      schemaVersion: '1.0.0',
-      eventId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
-      media: { mimeType: 'image/jpeg', byteLength: media.length, sha256: mediaHash, storageRef: null },
-      metadata,
-      canonicalization: 'RFC8785',
-      merkle: {
-        algorithm: 'SHA-256',
-        scheme: '2-leaf',
-        leaves: { media: mediaHash, metadata: metadataHash },
-        root,
-      },
-      signature: {
-        algorithm: 'SHA256withECDSA',
-        value: signature.toString('base64'),
-        publicKey: {
-          format: 'X.509',
-          curve: 'secp256r1',
-          value: publicKey.export({ type: 'spki', format: 'der' }).toString('base64'),
-        },
-        attestationCertificateChain: null,
-      },
-    },
-  };
-}
+// The fixture lives in helpers/ because the route suite builds the same signed
+// packages; two copies would drift.
+const { buildSignedPackage, locationAt, COORDS } = require('./helpers/signedPackage');
 
 test('a genuine package passes every cryptographic check', () => {
   const { pkg, media } = buildSignedPackage();
@@ -182,8 +131,257 @@ test('missing media reports unavailable, never pass', () => {
 
 test('an unattested package does not claim hardware backing', () => {
   const { pkg, media } = buildSignedPackage();
-  const { checks, verdict } = verifyProofPackage(pkg, media);
+  const { checks, advisories, verdict } = verifyProofPackage(pkg, media, { nowMillis: NOW });
 
-  assert.strictEqual(checks.attestationPresent, FAIL);
-  assert.notStrictEqual(verdict, 'verified');
+  // `unavailable`, not `fail`: the chain is absent, which is the absence of
+  // evidence rather than evidence of a defect (ADR-0006 §5). This changed in
+  // Phase 5 — it used to report FAIL, which wrongly condemned every package from
+  // a device that cannot attest.
+  assert.strictEqual(checks.attestationPresent, UNAVAILABLE);
+  assert.strictEqual(checks.attestationKeyBinding, UNAVAILABLE);
+
+  // The package still verifies — its integrity since capture IS proven — but the
+  // missing hardware guarantee is impossible to overlook.
+  assert.strictEqual(verdict, 'verified');
+  assert.ok(
+    advisories.some((a) => a.includes('No key attestation chain')),
+    'an absent chain must raise an advisory rather than pass silently',
+  );
+});
+
+// --- verdict semantics (ADR-0006 §5) ---------------------------------------
+
+test('a fully checkable genuine package is verified', () => {
+  const { pkg, media } = buildSignedPackage();
+  const { checks, verdict } = verifyProofPackage(pkg, media, { nowMillis: NOW });
+
+  for (const name of DECISIVE_CHECKS) {
+    assert.strictEqual(checks[name], PASS, `${name} should pass`);
+  }
+  assert.strictEqual(verdict, 'verified');
+});
+
+test('missing media holds the verdict at incomplete, never verified', () => {
+  const { pkg } = buildSignedPackage();
+  const { checks, verdict } = verifyProofPackage(pkg, undefined, { nowMillis: NOW });
+
+  assert.strictEqual(checks.mediaHashMatch, UNAVAILABLE);
+  // mediaHashMatch is decisive, so `unavailable` blocks `verified` without
+  // implying anything failed.
+  assert.strictEqual(verdict, 'incomplete');
+});
+
+// --- timestamp plausibility (check 4) --------------------------------------
+
+test('timestamp self-consistency is an exact identity, and breaking it fails', () => {
+  const { pkg, media } = buildSignedPackage();
+  // The producer computes wallClockMillis = floor(elapsedRealtimeNanos/1e6) +
+  // wallClockOffsetMillis, so this is exact arithmetic. Move the offset alone and
+  // the identity no longer holds.
+  pkg.metadata.timestamp.wallClockOffsetMillis += 1000;
+
+  // Note the metadata leaf now mismatches too — which is the point: an editor
+  // cannot break the identity without also breaking the hash. This test isolates
+  // the timestamp verdict.
+  const { checks, verdict } = verifyProofPackage(pkg, media, { nowMillis: NOW });
+
+  assert.strictEqual(checks.timestampPlausible, FAIL);
+  assert.strictEqual(verdict, 'failed');
+});
+
+test('an iso8601 rendering that disagrees with the epoch millis fails', () => {
+  const { pkg, media } = buildSignedPackage();
+  pkg.metadata.timestamp.iso8601 = '2020-01-01T00:00:00.000Z';
+
+  const { checks } = verifyProofPackage(pkg, media, { nowMillis: NOW });
+
+  assert.strictEqual(checks.timestampPlausible, FAIL);
+});
+
+test('a capture from the future fails, but ordinary clock skew does not', () => {
+  const { pkg, media } = buildSignedPackage();
+  const capturedAt = pkg.metadata.timestamp.wallClockMillis;
+
+  // Verified one second before the capture instant: within the skew allowance,
+  // because an unsynchronised device clock is common and is not forgery.
+  const tolerated = verifyProofPackage(pkg, media, { nowMillis: capturedAt - 1000 });
+  assert.strictEqual(tolerated.checks.timestampPlausible, PASS);
+
+  // A day before: nothing can be captured after the moment it is verified.
+  const rejected = verifyProofPackage(pkg, media, { nowMillis: capturedAt - 86400000 });
+  assert.strictEqual(rejected.checks.timestampPlausible, FAIL);
+  assert.strictEqual(rejected.verdict, 'failed');
+});
+
+test('a package with no recorded offset still checks its iso8601 rendering', () => {
+  // wallClockOffsetMillis is nullable in the schema, so the identity check must
+  // be skipped rather than crash — while the other two sub-checks still apply.
+  const { pkg, media } = buildSignedPackage({ timestamp: { wallClockOffsetMillis: null } });
+  const ok = verifyProofPackage(pkg, media, { nowMillis: NOW });
+  assert.strictEqual(ok.checks.timestampPlausible, PASS);
+
+  const { pkg: bad, media: badMedia } = buildSignedPackage({
+    timestamp: { wallClockOffsetMillis: null, iso8601: '1999-12-31T23:59:59.000Z' },
+  });
+  assert.strictEqual(
+    verifyProofPackage(bad, badMedia, { nowMillis: NOW }).checks.timestampPlausible,
+    FAIL,
+  );
+});
+
+// --- location plausibility (check 5) ----------------------------------------
+
+/**
+ * The same expected great-circle distances asserted in Android's
+ * LocationPlausibilityTest. Both sides check fixed known answers rather than
+ * each other, so a drift in either implementation is caught locally instead of
+ * surfacing later as an unexplained disagreement about the same pair of captures.
+ */
+const { chennai: CHENNAI, bangalore: BANGALORE, newYork: NEW_YORK } = COORDS;
+
+test('cross-implementation vector: haversine matches Android', () => {
+  assert.ok(Math.abs(haversineMeters(...CHENNAI, ...BANGALORE) - 290000) < 3000);
+  assert.ok(Math.abs(haversineMeters(...CHENNAI, ...NEW_YORK) - 13473000) < 20000);
+  assert.strictEqual(haversineMeters(...CHENNAI, ...CHENNAI), 0);
+});
+
+test('implied speed is distance over time', () => {
+  assert.strictEqual(impliedSpeedKmh(100000, 3600000), 100);
+});
+
+/** Two signed packages an hour apart, at the given coordinates. */
+function buildConsecutivePair(fromCoords, toCoords, gapMillis) {
+  const previous = buildSignedPackage({
+    eventId: '11111111-1111-4111-8111-111111111111',
+    location: locationAt(...fromCoords),
+  });
+  const current = buildSignedPackage({
+    eventId: '22222222-2222-4222-8222-222222222222',
+    location: locationAt(...toCoords),
+    timestamp: {
+      wallClockMillis: previous.pkg.metadata.timestamp.wallClockMillis + gapMillis,
+      // The identity must still hold, so move the monotonic clock by the same
+      // amount rather than only the wall clock.
+      elapsedRealtimeNanos:
+        previous.pkg.metadata.timestamp.elapsedRealtimeNanos + gapMillis * 1000000,
+      iso8601: new Date(previous.pkg.metadata.timestamp.wallClockMillis + gapMillis).toISOString(),
+    },
+  });
+  return { previous, current };
+}
+
+test('no stored history reports unavailable, not a pass', () => {
+  const { pkg, media } = buildSignedPackage({ location: locationAt(...CHENNAI) });
+  const { checks, advisories, verdict } = verifyProofPackage(pkg, media, {
+    nowMillis: NOW,
+    previousPackage: null,
+  });
+
+  assert.strictEqual(checks.locationPlausible, UNAVAILABLE);
+  // Non-decisive, so a first-ever capture is not punished for being first.
+  assert.strictEqual(verdict, 'verified');
+  assert.ok(advisories.some((a) => a.includes('could not be cross-checked')));
+});
+
+test('an event with no location cannot be cross-checked', () => {
+  const { pkg, media } = buildSignedPackage();
+  const { checks } = verifyProofPackage(pkg, media, { nowMillis: NOW, previousPackage: null });
+  assert.strictEqual(checks.locationPlausible, UNAVAILABLE);
+});
+
+test('ordinary travel between two captures is plausible', () => {
+  // Chennai to Bangalore (290 km) in 3 hours = ~97 km/h. A car.
+  const { previous, current } = buildConsecutivePair(CHENNAI, BANGALORE, 3 * 3600000);
+  const { checks, verdict } = verifyProofPackage(current.pkg, current.media, {
+    nowMillis: current.pkg.metadata.timestamp.wallClockMillis + 1000,
+    previousPackage: previous.pkg,
+  });
+
+  assert.strictEqual(checks.locationPlausible, PASS);
+  assert.strictEqual(verdict, 'verified');
+});
+
+test('air travel is NOT flagged — the plan\'s 300 km/h bound would have been wrong', () => {
+  // Chennai to New York (13,473 km) in 15 hours = ~898 km/h: a real long-haul
+  // flight. Under the original plan's 300 km/h threshold this would have been a
+  // false "teleportation" (ADR-0005 §2).
+  const { previous, current } = buildConsecutivePair(CHENNAI, NEW_YORK, 15 * 3600000);
+  const { checks } = verifyProofPackage(current.pkg, current.media, {
+    nowMillis: current.pkg.metadata.timestamp.wallClockMillis + 1000,
+    previousPackage: previous.pkg,
+  });
+
+  assert.strictEqual(checks.locationPlausible, PASS);
+});
+
+test('teleportation fails the location check and the verdict', () => {
+  // Chennai to New York in one minute = ~808,000 km/h.
+  const { previous, current } = buildConsecutivePair(CHENNAI, NEW_YORK, 60000);
+  const { checks, notes, verdict } = verifyProofPackage(current.pkg, current.media, {
+    nowMillis: current.pkg.metadata.timestamp.wallClockMillis + 1000,
+    previousPackage: previous.pkg,
+  });
+
+  assert.strictEqual(checks.locationPlausible, FAIL);
+  // A detected physical impossibility is a real finding, so it blocks the verdict
+  // even though it is not a decisive check (ADR-0006 §5 rule 1).
+  assert.strictEqual(verdict, 'failed');
+  assert.ok(notes.some((n) => n.includes('exceeds the')));
+});
+
+test('captures too close in time or space are not judged', () => {
+  // Half a second apart: dividing GNSS scatter by a near-zero interval would
+  // manufacture a phantom huge speed.
+  const tooSoon = buildConsecutivePair(CHENNAI, NEW_YORK, 500);
+  assert.strictEqual(
+    verifyProofPackage(tooSoon.current.pkg, tooSoon.current.media, {
+      nowMillis: NOW + 10000,
+      previousPackage: tooSoon.previous.pkg,
+    }).checks.locationPlausible,
+    UNAVAILABLE,
+  );
+
+  // Standing still: well inside the 50 m minimum-distance guard.
+  const stationary = buildConsecutivePair(CHENNAI, [CHENNAI[0] + 0.0001, CHENNAI[1]], 60000);
+  assert.strictEqual(
+    verifyProofPackage(stationary.current.pkg, stationary.current.media, {
+      nowMillis: stationary.current.pkg.metadata.timestamp.wallClockMillis + 1000,
+      previousPackage: stationary.previous.pkg,
+    }).checks.locationPlausible,
+    PASS,
+  );
+});
+
+test('a mock-provider location raises an advisory without failing the signature', () => {
+  const { pkg, media } = buildSignedPackage({
+    location: locationAt(...CHENNAI, { isMock: true }),
+  });
+  const { checks, advisories, verdict } = verifyProofPackage(pkg, media, { nowMillis: NOW });
+
+  // The signature is genuine; spoofing happened before capture, so this is a
+  // provenance finding rather than a tamper-evidence one.
+  assert.strictEqual(checks.signatureValid, PASS);
+  assert.strictEqual(verdict, 'verified');
+  assert.ok(
+    advisories.some((a) => a.includes('MOCK provider')),
+    'a mock location must be impossible to miss',
+  );
+});
+
+test('the verifier overrides a device that wrongly claimed plausibility', () => {
+  const { previous, current } = buildConsecutivePair(CHENNAI, NEW_YORK, 60000);
+  // The device-side block is unsigned and advisory, so a tamperer can set it to
+  // true. It must gain them nothing.
+  current.pkg.integrity = {
+    location: { isMock: false, mockDetectionChecks: [], gnssChecked: false, speedPlausible: true },
+  };
+
+  const { checks, advisories, verdict } = verifyProofPackage(current.pkg, current.media, {
+    nowMillis: current.pkg.metadata.timestamp.wallClockMillis + 1000,
+    previousPackage: previous.pkg,
+  });
+
+  assert.strictEqual(checks.locationPlausible, FAIL);
+  assert.strictEqual(verdict, 'failed');
+  assert.ok(advisories.some((a) => a.includes('device claimed')));
 });

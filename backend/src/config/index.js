@@ -62,7 +62,12 @@ const config = {
   // Shipped with every verdict so a consumer cannot present a `verified`
   // result as more than it is (research/02 §7, research/06 §7).
   verdictLimitations: [
-    'Proves the media and metadata are unaltered since capture and were signed by a specific hardware-backed key.',
+    // Deliberately does NOT say "hardware-backed" here. That claim is only true
+    // when the attestation checks pass, and a package from a device that could
+    // not attest still verifies (ADR-0006 §5) — so hardware backing is reported
+    // by `attestationPresent`/`attestationKeyBinding`, not asserted blanket.
+    'Proves the media and metadata are unaltered since capture and were signed by one specific key held in the capturing device keystore.',
+    'Hardware backing of that key is established only when the attestation checks pass.',
     'Does NOT prove the depicted event was real, unstaged, or correctly described.',
     'Not a standalone legal certificate; BSA 2023 s.63 requires human certification.',
   ],
@@ -83,14 +88,63 @@ const config = {
     nodeHashAlgorithm: HASH_ALGORITHM.toLowerCase().replace(/-/g, ''),
   },
 
-  // Placeholder status returned by checks whose implementation lands in Phase 5.
-  // Repeated across the /proof and /verify payloads, so it is declared once.
-  notImplementedStatus: 'not_implemented_phase_5',
+  // ------------------------------------------------------------------------
+  // Plausibility thresholds (verification checks 4 and 5, research/02 §8 Step 10).
+  //
+  // The location values MUST equal Android's IntegrityConfig, or the device's
+  // advisory answer and the verifier's authoritative one would disagree for no
+  // reason but drift. A cross-implementation test vector asserts the pair stay
+  // identical, exactly as the Merkle vector does for the crypto core.
+  // ------------------------------------------------------------------------
+  plausibility: {
+    // Mean Earth radius for the Haversine great-circle distance (metres).
+    earthRadiusMeters: 6371000,
+    // Implied speed above this between consecutive events is "teleportation".
+    // 1500 km/h, NOT the plan's 300: high-speed rail already runs ~300 km/h and
+    // jet-stream-boosted flights reach ~1300 km/h ground speed (ADR-0005).
+    maxPlausibleSpeedKmh: 1500,
+    // Below these gaps a speed is not computed at all: dividing GNSS scatter by
+    // a near-zero interval manufactures a phantom huge speed.
+    minElapsedMillisForSpeed: 1000,
+    minDistanceMetersForSpeed: 50,
 
-  // Firebase wiring lands in Phase 5; null until configured.
+    // How far ahead of the verifier's own clock a capture may claim to be
+    // before it is implausible. An NTP-synced device lands within seconds; this
+    // allows for an unsynchronised clock without admitting a forged future
+    // date. Overridable because a deployment's clock discipline is a deployment
+    // property, not a contract constant.
+    maxFutureSkewMillis: envInt('MAX_FUTURE_SKEW_MILLIS', 5 * 60 * 1000),
+
+    // Tolerance for `gpsTimeMillis` vs the wall clock, after accounting for the
+    // fix age. ADVISORY ONLY — see plausibility.js: a fused/network provider
+    // often derives getTime() from the very system clock being checked, so
+    // agreement proves little and only a gross divergence is informative.
+    gpsTimeToleranceMillis: envInt('GPS_TIME_TOLERANCE_MILLIS', 5 * 60 * 1000),
+  },
+
+  // ------------------------------------------------------------------------
+  // Persistence (Phase 5). Proof packages and media are stored immutably and
+  // addressed by content; see ADR-0006 for why media does NOT go to Firebase
+  // Cloud Storage (it requires a billing account as of 2026-02-03).
+  // ------------------------------------------------------------------------
+  store: {
+    // 'filesystem' (default) or 'memory' (tests). A Firestore adapter is a
+    // documented, config-gated option — see ADR-0006 §1 and SETUP.md.
+    driver: process.env.STORE_DRIVER || 'filesystem',
+    // Where the filesystem driver keeps its immutable objects. Defaults inside
+    // the backend directory so a bare `npm start` works with no setup.
+    dataDir: process.env.STORE_DATA_DIR || path.join(repoRoot, 'backend', '.data'),
+    // Upper bound on an uploaded media object (default 32 MiB). Media arrives as
+    // a raw octet-stream body rather than base64, so this is the true byte size.
+    maxMediaBytes: envInt('MAX_MEDIA_BYTES', 32 * 1024 * 1024),
+  },
+
+  // Firebase: Firestore only, and only if a project is configured. Cloud Storage
+  // is deliberately absent — it has required a linked billing account since
+  // 2026-02-03, whereas Firestore stays free on the Spark plan. Media therefore
+  // lives in the content-addressed store above. See ADR-0006 §1.
   firebase: {
     projectId: process.env.FIREBASE_PROJECT_ID || null,
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || null,
   },
 };
 

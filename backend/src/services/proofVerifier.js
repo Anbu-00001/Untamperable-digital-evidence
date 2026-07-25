@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const canonicalize = require('canonicalize');
 const config = require('../config');
 const { sha256Hex } = require('./hashService');
+const plausibility = require('./plausibility');
 
 /**
  * Cryptographic verification of a proof package (research/02 §8 Step 10).
@@ -26,6 +27,24 @@ const PASS = 'pass';
 const FAIL = 'fail';
 const UNAVAILABLE = 'unavailable';
 
+/**
+ * The checks that must all `pass` before a package may be called `verified`
+ * (ADR-0006 §5). Everything outside this set is still reported, and can still
+ * *fail* the package, but its being `unavailable` does not hold the verdict back.
+ *
+ * The line is drawn at "does this check answer the question the verdict claims
+ * to answer" — namely, is this bundle unaltered since capture and signed by the
+ * key it names. An absent attestation chain leaves that question answered; a
+ * missing media file does not.
+ */
+const DECISIVE_CHECKS = [
+  'mediaHashMatch',
+  'metadataHashMatch',
+  'merkleRootMatch',
+  'signatureValid',
+  'timestampPlausible',
+];
+
 /** Recomputes the 2-leaf Merkle root from two hex digests. */
 function merkleRoot2Leaf(mediaHashHex, metadataHashHex) {
   return sha256Hex(
@@ -36,10 +55,19 @@ function merkleRoot2Leaf(mediaHashHex, metadataHashHex) {
 /**
  * @param {object} pkg  a schema-valid proof package
  * @param {Buffer} [mediaBytes]  the media itself, when available
+ * @param {object} [options]
+ * @param {number} [options.nowMillis]  the verifier's clock; injected so the
+ *        timestamp check is testable without waiting for real time to pass.
+ * @param {object|null} [options.previousPackage]  the most recent earlier
+ *        package from the same install, for the location cross-check. Absent
+ *        means "no history available", which yields `unavailable`, not a pass.
  */
-function verifyProofPackage(pkg, mediaBytes) {
+function verifyProofPackage(pkg, mediaBytes, options = {}) {
+  const nowMillis = options.nowMillis !== undefined ? options.nowMillis : Date.now();
+  const previousPackage = options.previousPackage || null;
   const checks = {};
   const notes = [];
+  const advisories = [];
 
   // --- media leaf -----------------------------------------------------------
   if (!mediaBytes) {
@@ -105,11 +133,69 @@ function verifyProofPackage(pkg, mediaBytes) {
   // --- attestation ----------------------------------------------------------
   Object.assign(checks, verifyAttestationChain(pkg, signingKeyDer, notes));
 
-  // Phase 4/5 territory, honestly marked rather than silently passing.
-  checks.timestampPlausible = config.notImplementedStatus;
-  checks.locationPlausible = config.notImplementedStatus;
+  // --- timestamp plausibility (check 4) -------------------------------------
+  checks.timestampPlausible = plausibility.checkTimestampPlausible(pkg.metadata, nowMillis, notes);
 
-  return { checks, notes, verdict: verdictFor(checks) };
+  // --- location plausibility (check 5) --------------------------------------
+  // Recomputed from the signed metadata of two consecutive events. This is the
+  // authoritative answer; the device's own `integrity.location.speedPlausible`
+  // is advisory and unsigned (ADR-0005 §2).
+  checks.locationPlausible = plausibility.checkLocationPlausible(
+    pkg.metadata,
+    previousPackage ? previousPackage.metadata : null,
+    notes,
+  );
+
+  collectAdvisories(pkg, checks, advisories);
+
+  return { checks, notes, advisories, verdict: verdictFor(checks) };
+}
+
+/**
+ * Findings that a reader must see but that must not, on their own, condemn a
+ * package. Kept separate from `notes` (which explain check outcomes) because
+ * these are standing caveats about what the package does and does not establish.
+ */
+function collectAdvisories(pkg, checks, advisories) {
+  if (checks.attestationPresent === UNAVAILABLE) {
+    advisories.push(
+      'No key attestation chain: the signature proves the bundle is unaltered since ' +
+        'capture, but not that the signing key lives in secure hardware.',
+    );
+  }
+
+  if (pkg.metadata.location && pkg.metadata.location.isMock === true) {
+    // Signed by the device, so this is the device itself reporting that the
+    // position came from a mock provider. Not a tampering finding — a
+    // provenance one, and a serious one.
+    advisories.push(
+      'The device recorded this location as coming from a MOCK provider. The signature ' +
+        'is genuine; the position it covers is not trustworthy.',
+    );
+  }
+
+  if (checks.locationPlausible === UNAVAILABLE) {
+    advisories.push(
+      'Location could not be cross-checked against an earlier capture — this does not ' +
+        'indicate a problem, only that no comparison was possible.',
+    );
+  }
+
+  const gps = plausibility.gpsTimeAdvisory(pkg.metadata);
+  if (gps) advisories.push(gps);
+
+  // A disagreement between what the device claimed and what the verifier
+  // recomputed is worth surfacing rather than quietly preferring one.
+  const claimed = pkg.integrity && pkg.integrity.location
+    ? pkg.integrity.location.speedPlausible
+    : undefined;
+  if (claimed === true && checks.locationPlausible === FAIL) {
+    advisories.push(
+      'The device claimed this location was physically plausible, but the verifier ' +
+        "recomputed it as implausible. The verifier's result stands — the device-side " +
+        'value is unsigned and advisory.',
+    );
+  }
 }
 
 /**
@@ -126,7 +212,17 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
   const chainBase64 = pkg.signature.attestationCertificateChain;
   if (!chainBase64 || chainBase64.length === 0) {
     notes.push('no attestation chain — the key is not proven to be hardware-backed');
-    return { attestationPresent: FAIL, attestationChainValid: UNAVAILABLE, attestationKeyBinding: UNAVAILABLE };
+    // `unavailable`, not `fail`: the chain is absent, which is the absence of
+    // evidence, not evidence of a defect. A package from a device that could not
+    // attest is still a package whose integrity-since-capture is provable, so
+    // this raises an advisory instead of condemning it (ADR-0006 §5). A chain
+    // that IS present but invalid or unbound is a different matter entirely, and
+    // fails below.
+    return {
+      attestationPresent: UNAVAILABLE,
+      attestationChainValid: UNAVAILABLE,
+      attestationKeyBinding: UNAVAILABLE,
+    };
   }
 
   const result = { attestationPresent: PASS };
@@ -160,17 +256,33 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
 }
 
 /**
- * Any failed check makes the package unverifiable — there is no partial credit
- * for tamper-evidence. Checks that could not be run hold the verdict at
- * `incomplete` rather than letting it read as `verified`.
+ * Two rules, in order (ADR-0006 §5):
+ *
+ *  1. **Any** check that returned `fail` makes the verdict `failed`. There is no
+ *     partial credit for tamper-evidence, and this deliberately includes checks
+ *     outside the decisive set: a stapled-on attestation chain that does not bind
+ *     to the signing key, or a physically impossible implied speed, are real
+ *     findings even though neither is "the media was altered".
+ *
+ *  2. Otherwise every DECISIVE check must have passed. One that could not be run
+ *     — most often `mediaHashMatch`, when the media was not supplied — holds the
+ *     verdict at `incomplete` rather than letting absence of evidence read as
+ *     evidence. Non-decisive checks being `unavailable` raise an advisory and
+ *     leave the verdict alone.
  */
 function verdictFor(checks) {
-  const values = Object.values(checks);
-  if (values.includes(FAIL)) return 'failed';
-  if (values.some((v) => v === UNAVAILABLE || v === config.notImplementedStatus)) {
-    return 'incomplete';
-  }
-  return 'verified';
+  if (Object.values(checks).includes(FAIL)) return 'failed';
+  const decisiveAllPassed = DECISIVE_CHECKS.every((name) => checks[name] === PASS);
+  return decisiveAllPassed ? 'verified' : 'incomplete';
 }
 
-module.exports = { verifyProofPackage, verifyAttestationChain, merkleRoot2Leaf, PASS, FAIL, UNAVAILABLE };
+module.exports = {
+  verifyProofPackage,
+  verifyAttestationChain,
+  merkleRoot2Leaf,
+  verdictFor,
+  DECISIVE_CHECKS,
+  PASS,
+  FAIL,
+  UNAVAILABLE,
+};
