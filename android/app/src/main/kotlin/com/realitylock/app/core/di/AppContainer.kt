@@ -7,6 +7,7 @@ import com.realitylock.app.capture.DeviceInfoProvider
 import com.realitylock.app.capture.LocationSource
 import com.realitylock.app.capture.MediaFileStore
 import com.realitylock.app.capture.SensorSnapshotCollector
+import com.realitylock.app.forensics.ForensicAnalyzer
 import com.realitylock.app.capture.store.EventRepository
 import com.realitylock.app.capture.store.FileEventRepository
 import com.realitylock.app.core.config.CaptureConfig
@@ -54,6 +55,13 @@ class AppContainer(context: Context) {
     fun createSensorCollector(): SensorSnapshotCollector = SensorSnapshotCollector(appContext)
 
     fun createCameraController(): CameraController = CameraController(appContext)
+
+    /**
+     * The forensic analyzer is intentionally constructed here in isolation — it
+     * gets only a Context, never the coordinator/signer, so an analysed image
+     * has no route into the signing pipeline.
+     */
+    fun createForensicAnalyzer(): ForensicAnalyzer = ForensicAnalyzer(appContext)
 
     fun createCaptureCoordinator(sensors: SensorSnapshotCollector): CaptureCoordinator =
         CaptureCoordinator(

@@ -2,6 +2,9 @@ package com.realitylock.app.capture
 
 import com.realitylock.app.capture.model.CapturedEvent
 import com.realitylock.app.capture.model.EventMetadata
+import com.realitylock.app.capture.model.IntegrityData
+import com.realitylock.app.capture.model.LocationData
+import com.realitylock.app.capture.model.LocationIntegrityData
 import com.realitylock.app.capture.model.MediaData
 import com.realitylock.app.capture.model.MerkleData
 import com.realitylock.app.capture.model.MerkleLeaves
@@ -12,6 +15,7 @@ import com.realitylock.app.capture.store.EventRepository
 import com.realitylock.app.capture.store.EventSerializer
 import com.realitylock.app.core.config.CaptureConfig
 import com.realitylock.app.core.config.CryptoConfig
+import com.realitylock.app.core.config.IntegrityConfig
 import com.realitylock.app.core.time.ClockCorrelator
 import com.realitylock.app.crypto.EventSigner
 import com.realitylock.app.crypto.Hashing
@@ -116,7 +120,13 @@ class CaptureCoordinator(
             EventSerializer.metadataJson(metadata),
         )
 
-        // 8. Compose the 2-leaf Merkle root and sign it in secure hardware.
+        // 8. Advisory integrity signals (Phase 4). Computed before signing so the
+        //    package carries them, but the authoritative plausibility check is the
+        //    verifier's (see IntegrityData); the one signed integrity signal,
+        //    isMock, already lives in the signed metadata above.
+        val integrity = IntegrityData(location = computeLocationIntegrity(location, wallClockMillis))
+
+        // 9. Compose the 2-leaf Merkle root and sign it in secure hardware.
         val rootHex = MerkleTree.root2Leaf(mediaHashHex, metadataHashHex)
         val signed = eventSigner.sign(rootHex)
 
@@ -145,9 +155,52 @@ class CaptureCoordinator(
                 ),
                 attestationCertificateChain = signed.attestationChainBase64,
             ),
+            integrity = integrity,
         )
 
-        // 9. Persist the metadata sidecar next to the media.
+        // 10. Persist the metadata sidecar next to the media.
         return repository.save(event)
+    }
+
+    /**
+     * Builds the advisory location-integrity view for a new capture.
+     *
+     * `speedPlausible` compares against the most recent *previously stored* event
+     * that had a location, using wall-clock time (robust across reboots). It is
+     * null when there is no such event or the two are too close to judge — never
+     * a false "implausible". Only checks that genuinely ran are named in
+     * `mockDetectionChecks`; the dead AppOps/Settings.Secure checks from the
+     * original plan are omitted because a non-privileged app cannot run them on
+     * API 35 (Phase-4 research; ADR-0005).
+     */
+    private fun computeLocationIntegrity(
+        location: LocationData?,
+        wallClockMillis: Long,
+    ): LocationIntegrityData? {
+        if (location == null) return null
+
+        val checks = mutableListOf(IntegrityConfig.CHECK_IS_MOCK)
+        var speedPlausible: Boolean? = null
+
+        val previous = repository.list().firstOrNull { it.metadata.location != null }
+        val prevLoc = previous?.metadata?.location
+        if (prevLoc != null) {
+            checks.add(IntegrityConfig.CHECK_SPEED_PLAUSIBILITY)
+            speedPlausible = LocationPlausibility.isPlausible(
+                prevLat = prevLoc.latitude,
+                prevLon = prevLoc.longitude,
+                prevWallClockMillis = previous.metadata.timestamp.wallClockMillis,
+                lat = location.latitude,
+                lon = location.longitude,
+                wallClockMillis = wallClockMillis,
+            )
+        }
+
+        return LocationIntegrityData(
+            isMock = location.isMock,
+            mockDetectionChecks = checks,
+            gnssChecked = false, // capability-probed only; signal analysis is future work
+            speedPlausible = speedPlausible,
+        )
     }
 }

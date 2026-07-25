@@ -26,6 +26,7 @@ import com.realitylock.app.R
 import com.realitylock.app.core.config.AppConfig
 import com.realitylock.app.core.config.CryptoConfig
 import com.realitylock.app.core.config.ProofPackageConstants
+import com.realitylock.app.capture.GnssCapabilityProbe
 import com.realitylock.app.core.device.DeviceCapabilities
 import com.realitylock.app.crypto.AttestationProbe
 import kotlinx.coroutines.Dispatchers
@@ -94,6 +95,18 @@ fun DeviceStatusScreen(modifier: Modifier = Modifier) {
             yesNo(capabilities.hasAccelerometer),
         )
         StatusRow(stringResource(R.string.device_gyroscope), yesNo(capabilities.hasGyroscope))
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            stringResource(R.string.device_section_gnss),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        val gnssProbe = remember { GnssCapabilityProbe(context) }
+        StatusRow(
+            stringResource(R.string.device_gnss_raw_supported),
+            yesNo(gnssProbe.supportsRawMeasurements),
+        )
+        Text(stringResource(R.string.device_gnss_note), style = MaterialTheme.typography.bodySmall)
 
         Spacer(Modifier.height(12.dp))
         Text(

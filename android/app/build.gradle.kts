@@ -154,7 +154,8 @@ dependencies {
     // implementation(libs.tink.android)
     // Play Integrity is a Phase-7 stretch, not a dependency — see ADR-0004.
     // implementation(libs.play.integrity)
-    // implementation(libs.androidx.exifinterface)
+    // EXIF-consistency forensic checks on candidate images (Phase 4).
+    implementation(libs.androidx.exifinterface)
 
     // ---- Networking (Phase 5) ----
     // implementation(libs.retrofit.core)

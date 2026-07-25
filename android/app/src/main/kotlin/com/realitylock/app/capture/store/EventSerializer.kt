@@ -4,6 +4,8 @@ import com.realitylock.app.capture.model.CapturedEvent
 import com.realitylock.app.capture.model.DeviceData
 import com.realitylock.app.capture.model.EventMetadata
 import com.realitylock.app.capture.model.LocationData
+import com.realitylock.app.capture.model.IntegrityData
+import com.realitylock.app.capture.model.LocationIntegrityData
 import com.realitylock.app.capture.model.MediaData
 import com.realitylock.app.capture.model.MerkleData
 import com.realitylock.app.capture.model.MerkleLeaves
@@ -43,6 +45,7 @@ object EventSerializer {
         put(KEY_CANONICALIZATION, ProofPackageConstants.JSON_CANONICALIZATION_SCHEME)
         event.merkle?.let { put(KEY_MERKLE, merkleToJson(it)) }
         event.signature?.let { put(KEY_SIGNATURE, signatureToJson(it)) }
+        event.integrity?.let { put(KEY_INTEGRITY, integrityToJson(it)) }
     }
 
     /**
@@ -70,6 +73,7 @@ object EventSerializer {
             metadata = metadataFromJson(root.getJSONObject(KEY_METADATA)),
             merkle = root.optJSONObject(KEY_MERKLE)?.let(::merkleFromJson),
             signature = root.optJSONObject(KEY_SIGNATURE)?.let(::signatureFromJson),
+            integrity = root.optJSONObject(KEY_INTEGRITY)?.let(::integrityFromJson),
         )
     }
 
@@ -235,6 +239,38 @@ object EventSerializer {
         )
     }
 
+    // ---- integrity (Phase 4, advisory) ----
+
+    private fun integrityToJson(integrity: IntegrityData) = JSONObject().apply {
+        // Play Integrity is deliberately not used (ADR-0004); the field stays null.
+        put(KEY_PLAY_INTEGRITY_TOKEN, JSONObject.NULL)
+        putOrNull(KEY_LOCATION, integrity.location?.let(::locationIntegrityToJson))
+    }
+
+    private fun locationIntegrityToJson(loc: LocationIntegrityData) = JSONObject().apply {
+        put(KEY_IS_MOCK, loc.isMock)
+        put(
+            KEY_MOCK_DETECTION_CHECKS,
+            JSONArray().also { array -> loc.mockDetectionChecks.forEach(array::put) },
+        )
+        put(KEY_GNSS_CHECKED, loc.gnssChecked)
+        putOrNull(KEY_SPEED_PLAUSIBLE, loc.speedPlausible)
+    }
+
+    private fun integrityFromJson(json: JSONObject): IntegrityData =
+        IntegrityData(
+            location = json.optJSONObject(KEY_LOCATION)?.let(::locationIntegrityFromJson),
+        )
+
+    private fun locationIntegrityFromJson(json: JSONObject) = LocationIntegrityData(
+        isMock = json.optBoolean(KEY_IS_MOCK, false),
+        mockDetectionChecks = json.optJSONArray(KEY_MOCK_DETECTION_CHECKS)?.let { array ->
+            (0 until array.length()).map(array::getString)
+        }.orEmpty(),
+        gnssChecked = json.optBoolean(KEY_GNSS_CHECKED, false),
+        speedPlausible = if (json.isNull(KEY_SPEED_PLAUSIBLE)) null else json.optBoolean(KEY_SPEED_PLAUSIBLE),
+    )
+
     // ---- helpers ----
 
     private fun JSONObject.putOrNull(key: String, value: Any?) {
@@ -312,4 +348,10 @@ object EventSerializer {
     private const val KEY_FORMAT = "format"
     private const val KEY_CURVE = "curve"
     private const val KEY_ATTESTATION_CHAIN = "attestationCertificateChain"
+
+    private const val KEY_INTEGRITY = "integrity"
+    private const val KEY_PLAY_INTEGRITY_TOKEN = "playIntegrityToken"
+    private const val KEY_MOCK_DETECTION_CHECKS = "mockDetectionChecks"
+    private const val KEY_GNSS_CHECKED = "gnssChecked"
+    private const val KEY_SPEED_PLAUSIBLE = "speedPlausible"
 }

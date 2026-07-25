@@ -71,6 +71,30 @@
     <string name="device_accelerometer">Accelerometer</string>
     <string name="device_gyroscope">Gyroscope</string>
 
+    <!-- ==================== Analyze (Explainable Authenticity Heuristic) ==================== -->
+    <string name="tab_analyze">Analyze</string>
+    <string name="analyze_disclaimer_title">Triage aid — not a verdict</string>
+    <string name="analyze_disclaimer_body">These heuristics run on any image you pick, to help you look closer. They cannot prove an image is real or fake. Bright ELA regions and metadata flags raise questions, not answers — high-contrast edges are naturally bright, and metadata can be edited or stripped. This does not sign or store anything.</string>
+    <string name="analyze_pick_image">Pick an image to analyze</string>
+    <string name="analyze_running">Analyzing…</string>
+    <string name="analyze_source">Source</string>
+    <string name="analyze_ela_title">Error Level Analysis</string>
+    <string name="analyze_ela_map">ELA map</string>
+    <!-- resave quality, max error, mean error -->
+    <string name="analyze_ela_stats">re-saved at q%1$d · max error %2$d · mean error %3$.2f</string>
+    <string name="analyze_ela_note">Compare like with like: edges to edges, flat areas to flat areas. A single re-save (e.g. sharing through a messaging app) erases the signal, and a single-save camera photo shows no manipulation signal at all.</string>
+    <string name="analyze_exif_title">EXIF metadata</string>
+    <string name="analyze_exif_none">No metadata inconsistencies flagged. (Clean or absent metadata is not evidence the image is genuine.)</string>
+    <string name="analyze_exif_note">Metadata can be edited, stripped, or fabricated with free tools. A flag raises a question; it does not confirm manipulation.</string>
+    <!-- make, model, software, capture time -->
+    <string name="analyze_exif_facts">make: %1$s\nmodel: %2$s\nsoftware: %3$s\ncaptured: %4$s</string>
+    <string name="analyze_absent">—</string>
+    <string name="analyze_flag_editor">Software names an image editor: %1$s</string>
+    <string name="analyze_flag_modified">File modified after capture (%1$s)</string>
+    <string name="analyze_flag_makernote">MakerNote absent while other camera metadata is present</string>
+    <string name="analyze_flag_no_exif">No EXIF metadata at all (often stripped by editors or messaging apps)</string>
+    <string name="analyze_flag_gps">GPS coordinates present in metadata</string>
+
     <!-- ==================== Shared ==================== -->
     <string name="common_yes">Yes</string>
     <string name="common_no">No</string>
@@ -79,4 +103,7 @@
     <string name="device_attestation_hardware">Hardware attested</string>
     <string name="device_attestation_tier">Security tier</string>
     <string name="device_attestation_chain_length">Certificate chain length</string>
+    <string name="device_section_gnss">GNSS integrity (Phase 4)</string>
+    <string name="device_gnss_raw_supported">Raw GNSS measurements supported</string>
+    <string name="device_gnss_note">Raw-signal spoofing analysis (C/N0, AGC) is future work; only the capability is probed today.</string>
 </resources>

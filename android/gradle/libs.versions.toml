@@ -66,7 +66,7 @@ okhttp = "5.1.0"
 tink = "1.19.0"                     # Google Tink (safe crypto primitives)
 playIntegrity = "1.6.0"             # Play Integrity API (successor to the dead SafetyNet)
 jsonCanonicalization = "1.1"        # io.github.erdtman — RFC 8785 JCS canonical JSON
-exifInterface = "1.4.1"             # androidx.exifinterface — EXIF forensic checks (Phase 4)
+exifInterface = "1.4.2"             # androidx.exifinterface — EXIF forensic checks (Phase 4)
 
 # --- Verification UI (Phase 5) ---
 zxing = "4.3.0"                     # journeyapps zxing-android-embedded — QR generate/scan

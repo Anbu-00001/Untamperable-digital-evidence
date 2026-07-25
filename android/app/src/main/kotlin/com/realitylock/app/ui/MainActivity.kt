@@ -9,6 +9,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.realitylock.app.RealityLockApplication
+import com.realitylock.app.ui.analyze.AnalyzeViewModel
 import com.realitylock.app.ui.capture.CaptureScreen
 import com.realitylock.app.ui.capture.CaptureViewModel
 
@@ -28,7 +29,12 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val captureViewModel: CaptureViewModel =
                         viewModel(factory = CaptureViewModel.factory(container))
-                    CaptureScreen(viewModel = captureViewModel)
+                    val analyzeViewModel: AnalyzeViewModel =
+                        viewModel(factory = AnalyzeViewModel.Factory(container))
+                    CaptureScreen(
+                        viewModel = captureViewModel,
+                        analyzeViewModel = analyzeViewModel,
+                    )
                 }
             }
         }

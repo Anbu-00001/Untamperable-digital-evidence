@@ -48,6 +48,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.realitylock.app.R
 import com.realitylock.app.capture.LocationSource
 import com.realitylock.app.capture.model.CapturedEvent
+import com.realitylock.app.ui.analyze.AnalyzeScreen
+import com.realitylock.app.ui.analyze.AnalyzeViewModel
 import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
 
 /**
@@ -60,7 +62,11 @@ import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
  * that, and an evidence tool should be explicit about what it records.
  */
 @Composable
-fun CaptureScreen(viewModel: CaptureViewModel, modifier: Modifier = Modifier) {
+fun CaptureScreen(
+    viewModel: CaptureViewModel,
+    analyzeViewModel: AnalyzeViewModel,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsState()
@@ -106,6 +112,11 @@ fun CaptureScreen(viewModel: CaptureViewModel, modifier: Modifier = Modifier) {
             Tab(
                 selected = selectedTab == 2,
                 onClick = { selectedTab = 2 },
+                text = { Text(stringResource(R.string.tab_analyze)) },
+            )
+            Tab(
+                selected = selectedTab == 3,
+                onClick = { selectedTab = 3 },
                 text = { Text(stringResource(R.string.tab_device)) },
             )
         }
@@ -131,6 +142,8 @@ fun CaptureScreen(viewModel: CaptureViewModel, modifier: Modifier = Modifier) {
                 events = uiState.events,
                 onDelete = viewModel::deleteEvent,
             )
+
+            2 -> AnalyzeScreen(viewModel = analyzeViewModel)
 
             else -> DeviceStatusScreen()
         }

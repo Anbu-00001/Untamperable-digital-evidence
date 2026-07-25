@@ -24,6 +24,37 @@ data class CapturedEvent(
     val merkle: MerkleData? = null,
     /** ECDSA signature over [MerkleData.root]; null pre-Phase-3. */
     val signature: SignatureData? = null,
+    /**
+     * Advisory device/location integrity signals (Phase 4). Deliberately NOT
+     * inside the signed Merkle root in v1: the authoritative plausibility check
+     * is the verifier's, recomputed from the signed metadata of consecutive
+     * events (research/02 §8), so a tamperer editing this block gains nothing.
+     * The one integrity signal that must be signed — `isMock` — already lives in
+     * the signed [EventMetadata.location].
+     */
+    val integrity: IntegrityData? = null,
+)
+
+data class IntegrityData(
+    val location: LocationIntegrityData? = null,
+)
+
+data class LocationIntegrityData(
+    /** Mirror of the signed `metadata.location.isMock`. */
+    val isMock: Boolean,
+    /** Names of the mock/integrity checks that actually ran (never dead ones). */
+    val mockDetectionChecks: List<String>,
+    /**
+     * Whether raw-GNSS *signal* integrity was verified. Always false in v1: only
+     * a capability probe runs; the C/N0-AGC spoofing analysis is future work.
+     */
+    val gnssChecked: Boolean,
+    /**
+     * Whether the implied speed from the previous located event is physically
+     * possible. Null when there is no prior event, or the two are too close in
+     * time/space to judge — never a false "implausible".
+     */
+    val speedPlausible: Boolean?,
 )
 
 data class MerkleData(
