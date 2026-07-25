@@ -75,7 +75,22 @@ A backend test also covers the subtle case: an attacker who edits metadata **and
 
 **Honest limits:** the verdict is `incomplete`, never `verified`, while `timestampPlausible`/`locationPlausible` remain Phase 4/5 — a passing package is not allowed to overclaim. Motion binding is usually 1–4 ms from the shutter but **intermittently reaches ~270–490 ms**; the 500 ms guard keeps it truthful and the exact offset travels in the package. Key attestation also does not prove the *running app* is unmodified, unlike Play Integrity's device-integrity verdict.
 
-**Next:** Phase 4 — location/sensor integrity and the ELA/EXIF layer.
+### Phase 4 (Location Integrity + Explainable Authenticity Heuristic) — complete, verified on device
+- **Location integrity** ([ADR-0005](docs/design/adr/ADR-0005-phase4-integrity-and-forensics-scope.md)): `isMock()` plus a speed/distance "teleportation" check (Haversine, **>1500 km/h** with jitter guards — the plan's 300 km/h would have falsely flagged ordinary air travel). Written to the proof package's advisory `integrity.location` block.
+- **The mock 4-check pattern was *not* built** — research showed 3 of its 4 checks are dead code for a normal app on API 35 (the AppOps scan needs a privileged permission; the `Settings.Secure` flag has read 0 since API 23). Shipping non-functional code as a security feature would be dishonest.
+- **GNSS raw** is a capability probe only (surfaced on the Device screen); C/N0-AGC spoofing analysis is honestly scoped as future work.
+- **Explainable Authenticity Heuristic** — a separate **Analyze** tab: pick any candidate image → ELA heat-map + EXIF-consistency flags. It produces a *report*, never a proof package, and never signs or stores anything, so the "no gallery import into the proof flow" rule stays intact.
+- **Labelled as triage, never a verdict** — the screen leads with a disclaimer and attaches no real/fake score, because ELA is well-documented as unreliable if overclaimed (Farid: it mislabels real and altered images "with the same likelihood").
+
+**Exit criteria proven on the physical CPH2591** via 3 instrumented tests (the project's first `androidTest`), using the real Android JPEG encoder and `androidx.exifinterface`:
+```
+PASS  ela_highlights_the_spliced_region        (spliced seam > 1.5× background)
+PASS  exif_flags_an_image_edited_in_photoshop  (EDITOR_SOFTWARE fires)
+PASS  ela_analyzer_produces_a_heatmap_of_matching_size
+```
+Evidence — including the ELA heat-map lighting up a known splice — in [docs/evidence/phase4-forensics/](docs/evidence/phase4-forensics/). **86 unit tests + 3 instrumented.**
+
+**Next:** Phase 5 — backend sync, storage, and the full verification module.
 
 ## Quick start
 ```bash

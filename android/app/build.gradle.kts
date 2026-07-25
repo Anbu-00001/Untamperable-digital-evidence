@@ -87,6 +87,7 @@ android {
     // default Kotlin source root is src/main/java).
     sourceSets["main"].kotlin.srcDir("src/main/kotlin")
     sourceSets["test"].kotlin.srcDir("src/test/kotlin")
+    sourceSets["androidTest"].kotlin.srcDir("src/androidTest/kotlin")
 }
 
 kotlin {
