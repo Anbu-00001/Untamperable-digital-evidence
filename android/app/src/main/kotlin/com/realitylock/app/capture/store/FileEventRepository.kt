@@ -47,6 +47,12 @@ class FileEventRepository(
 
     override fun findById(eventId: String): CapturedEvent? = readEvent(eventId)
 
+    override fun readPackageBytes(eventId: String): ByteArray? {
+        val file = metadataFile(eventId)
+        if (!file.exists()) return null
+        return runCatching { file.readBytes() }.getOrNull()
+    }
+
     override fun delete(eventId: String): Boolean {
         val mediaDeleted = mediaFile(eventId).delete()
         val metadataDeleted = metadataFile(eventId).delete()

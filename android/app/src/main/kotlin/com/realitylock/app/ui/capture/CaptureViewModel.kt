@@ -35,7 +35,7 @@ data class CaptureUiState(
  * Drives the capture screen (MVVM per research/03 §1: ViewModel exposes
  * observable state via StateFlow, the UI only observes).
  */
-class CaptureViewModel(container: AppContainer) : ViewModel() {
+class CaptureViewModel(private val container: AppContainer) : ViewModel() {
 
     private val sensors = container.createSensorCollector()
     private val coordinator = container.createCaptureCoordinator(sensors)
@@ -81,6 +81,10 @@ class CaptureViewModel(container: AppContainer) : ViewModel() {
                     it.copy(isCapturing = false, lastEvent = event, error = null)
                 }
                 refreshHistory()
+                // Ask for a sync pass. It is constrained on connectivity, so with
+                // no network this simply queues and runs by itself later — which is
+                // the whole offline-first behaviour, not a special case.
+                container.requestSync()
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
@@ -94,7 +98,9 @@ class CaptureViewModel(container: AppContainer) : ViewModel() {
 
     fun deleteEvent(eventId: String) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { repository.delete(eventId) }
+            // Via the container, so the sync sidecar goes with the event rather
+            // than lingering as orphaned state.
+            withContext(Dispatchers.IO) { container.deleteEvent(eventId) }
             refreshHistory()
         }
     }

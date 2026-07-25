@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    DEBUG-ONLY manifest overlay.
+
+    Permits cleartext HTTP so a debug build can reach a backend running on a
+    developer machine (`http://127.0.0.1:3000/` over `adb reverse`, or an
+    emulator's `http://10.0.2.2:3000/`). Since API 28 the platform blocks
+    cleartext by default, which is correct and stays in force for release builds:
+    this file does not apply to them.
+
+    A proof package contains GPS coordinates, so shipping a release that would
+    send them unencrypted is not acceptable — hence the overlay rather than
+    setting usesCleartextTraffic in the main manifest.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:usesCleartextTraffic="true"
+        tools:ignore="UnusedAttribute" />
+</manifest>

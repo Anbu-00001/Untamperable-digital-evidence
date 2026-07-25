@@ -95,6 +95,73 @@
     <string name="analyze_flag_no_exif">No EXIF metadata at all (often stripped by editors or messaging apps)</string>
     <string name="analyze_flag_gps">GPS coordinates present in metadata</string>
 
+    <!-- ==================== Sync (Phase 5) ==================== -->
+    <string name="sync_label">Backend</string>
+    <string name="sync_stage_pending">not synced</string>
+    <string name="sync_stage_package_stored">package synced, media pending</string>
+    <string name="sync_stage_complete">synced</string>
+    <string name="sync_stage_failed">sync failed</string>
+    <string name="sync_attempts">attempt %1$d</string>
+    <string name="sync_now">Sync now</string>
+    <string name="sync_retry">Retry sync</string>
+    <string name="sync_queued">Sync requested — it will run as soon as there is a network.</string>
+    <string name="sync_offline_note">Captures are stored on the device first and upload by themselves once a network is available. Nothing is lost while offline.</string>
+
+    <!-- ==================== Verification result (Phase 5) ====================
+         The per-check breakdown is the product here, not a single Valid/Tampered
+         badge: "the media was altered" and "we had no copy of the media" are
+         different statements and must stay distinguishable. -->
+    <string name="verify_action">Verify</string>
+    <string name="verify_running">Verifying…</string>
+    <string name="verify_title">Authenticity result</string>
+    <string name="verify_verdict_verified">VERIFIED</string>
+    <string name="verify_verdict_failed">TAMPERED</string>
+    <string name="verify_verdict_incomplete">INCOMPLETE</string>
+    <string name="verify_verdict_invalid_format">NOT A VALID PROOF PACKAGE</string>
+    <string name="verify_verdict_unknown">UNKNOWN</string>
+    <string name="verify_verdict_verified_body">Every decisive check passed: the media and metadata are unaltered since capture and were signed by the key this package names.</string>
+    <string name="verify_verdict_failed_body">At least one check failed. This package does not hold together — see the breakdown below for exactly which part.</string>
+    <string name="verify_verdict_incomplete_body">Nothing failed, but a decisive check could not be run — most often because the backend does not have the media yet. Sync this event and verify again.</string>
+    <string name="verify_verdict_invalid_format_body">The document does not satisfy the proof-package schema, so it could not be checked at all.</string>
+    <string name="verify_verdict_unknown_body">The verifier returned a verdict this app version does not recognise.</string>
+    <string name="verify_checks_title">Checks</string>
+    <string name="verify_notes_title">Details</string>
+    <string name="verify_advisories_title">Advisories</string>
+    <string name="verify_limitations_title">What this does and does not prove</string>
+    <string name="verify_unreachable">Could not reach the verifier: %1$s</string>
+    <string name="verify_outcome_pass">pass</string>
+    <string name="verify_outcome_fail">FAIL</string>
+    <string name="verify_outcome_unavailable">not checkable</string>
+    <string name="verify_outcome_unknown">unrecognised</string>
+    <string name="verify_close">Close</string>
+
+    <!-- Check labels, so the screen reads as English rather than as JSON keys. -->
+    <string name="check_schemaValid">Schema valid</string>
+    <string name="check_mediaHashMatch">Media unaltered</string>
+    <string name="check_metadataHashMatch">Metadata unaltered</string>
+    <string name="check_merkleRootMatch">Merkle root consistent</string>
+    <string name="check_signatureValid">Signature valid</string>
+    <string name="check_attestationPresent">Attestation present</string>
+    <string name="check_attestationChainValid">Attestation chain valid</string>
+    <string name="check_attestationKeyBinding">Attested key is the signing key</string>
+    <string name="check_timestampPlausible">Timestamp plausible</string>
+    <string name="check_locationPlausible">Location plausible</string>
+
+    <!-- ==================== PDF certificate (Phase 5) ====================
+         The framing lines are drawn in a box at the TOP of the certificate,
+         before any hash or verdict. research/06 §7 requires the document to state
+         what it does not establish; BSA 2023 s.63 requires human certification,
+         so this must never present itself as self-sufficient proof. -->
+    <string name="certificate_action">Certificate</string>
+    <string name="certificate_generating">Building certificate…</string>
+    <string name="certificate_title">Reality Lock — Event Proof Certificate</string>
+    <string name="certificate_saved">Certificate saved.</string>
+    <string name="certificate_save_failed">Could not save the certificate: %1$s</string>
+    <string name="certificate_framing_1">This certificate reports the result of recomputing a cryptographic proof package. It establishes that the media and metadata are unaltered since capture and were signed by one specific key held in the capturing device keystore.</string>
+    <string name="certificate_framing_2">It does NOT prove that the depicted event was real, unstaged, or correctly described.</string>
+    <string name="certificate_framing_3">It is NOT a standalone legal certificate. Under the Bharatiya Sakshya Adhiniyam 2023 s.63, electronic evidence requires certification by a person; this document is generated automatically and requires human countersignature to be produced as evidence.</string>
+    <string name="certificate_framing_4">Location is shown to three decimal places (~100 m). The exact coordinate remains in the proof package.</string>
+
     <!-- ==================== Shared ==================== -->
     <string name="common_yes">Yes</string>
     <string name="common_no">No</string>

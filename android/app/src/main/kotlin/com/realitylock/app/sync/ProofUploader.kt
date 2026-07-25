@@ -122,7 +122,8 @@ class ProofUploader(
     private fun execute(request: Request, onSuccess: (Int, String?) -> Result): Result =
         try {
             client.newCall(request).execute().use { response ->
-                val body = response.body?.string()
+                // Non-null in OkHttp 5 (it was nullable in 4.x).
+                val body = response.body.string()
                 when {
                     response.isSuccessful -> onSuccess(response.code, body)
                     response.code >= HTTP_SERVER_ERROR ->

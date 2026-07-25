@@ -12,6 +12,7 @@ import com.realitylock.app.RealityLockApplication
 import com.realitylock.app.ui.analyze.AnalyzeViewModel
 import com.realitylock.app.ui.capture.CaptureScreen
 import com.realitylock.app.ui.capture.CaptureViewModel
+import com.realitylock.app.ui.verify.ProofsViewModel
 
 /**
  * Hosts the capture flow. The dependency graph is taken from the Application's
@@ -31,9 +32,12 @@ class MainActivity : ComponentActivity() {
                         viewModel(factory = CaptureViewModel.factory(container))
                     val analyzeViewModel: AnalyzeViewModel =
                         viewModel(factory = AnalyzeViewModel.Factory(container))
+                    val proofsViewModel: ProofsViewModel =
+                        viewModel(factory = ProofsViewModel.Factory(container))
                     CaptureScreen(
                         viewModel = captureViewModel,
                         analyzeViewModel = analyzeViewModel,
+                        proofsViewModel = proofsViewModel,
                     )
                 }
             }

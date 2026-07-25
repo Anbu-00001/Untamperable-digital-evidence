@@ -10,13 +10,23 @@ import com.realitylock.app.capture.SensorSnapshotCollector
 import com.realitylock.app.forensics.ForensicAnalyzer
 import com.realitylock.app.capture.store.EventRepository
 import com.realitylock.app.capture.store.FileEventRepository
+import com.realitylock.app.certificate.CertificateRenderer
+import com.realitylock.app.core.config.AppConfig
 import com.realitylock.app.core.config.CaptureConfig
+import com.realitylock.app.core.config.SyncConfig
 import com.realitylock.app.core.device.InstallIdProvider
 import com.realitylock.app.core.time.ClockCorrelator
 import com.realitylock.app.crypto.EventSigner
 import com.realitylock.app.crypto.SigningKeyManager
 import com.realitylock.app.core.time.SystemClockSource
+import com.realitylock.app.sync.ProofSyncEngine
+import com.realitylock.app.sync.ProofUploader
+import com.realitylock.app.sync.SyncStateStore
+import com.realitylock.app.sync.SyncWorker
+import com.realitylock.app.verify.VerificationClient
 import java.io.File
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
 
 /**
  * Manual dependency container, created once by the Application.
@@ -50,6 +60,52 @@ class AppContainer(context: Context) {
 
     /** Shared store of captured events. */
     val eventRepository: EventRepository = FileEventRepository(capturesDir)
+
+    // ---- Phase 5: sync, verification, certificate --------------------------
+
+    /**
+     * Mutable sync bookkeeping, in its OWN directory. Keeping it out of
+     * [capturesDir] is what makes "the signed package file is never rewritten" a
+     * property of the on-disk layout rather than a promise (ADR-0006 §3).
+     */
+    val syncStateStore = SyncStateStore(File(appContext.filesDir, SyncConfig.SYNC_STATE_SUBDIR))
+
+    /**
+     * One OkHttp client for the whole app: it owns the connection and thread pools,
+     * and creating one per request would throw that reuse away.
+     */
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(SyncConfig.CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .readTimeout(SyncConfig.READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .writeTimeout(SyncConfig.WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .build()
+
+    val proofSyncEngine = ProofSyncEngine(
+        repository = eventRepository,
+        syncStateStore = syncStateStore,
+        uploader = ProofUploader(httpClient, AppConfig.backendBaseUrl),
+    )
+
+    val verificationClient = VerificationClient(httpClient, AppConfig.backendBaseUrl)
+
+    val certificateRenderer = CertificateRenderer()
+
+    /**
+     * Requests a background sync pass.
+     *
+     * Exposed as a lambda so ViewModels can trigger sync without holding a
+     * `Context` — the Application context lives here, where it belongs.
+     */
+    val requestSync: () -> Unit = { SyncWorker.enqueue(appContext) }
+
+    /**
+     * Deletes an event and its sync bookkeeping together, so a later capture
+     * cannot inherit a stale state file under a recycled id.
+     */
+    fun deleteEvent(eventId: String): Boolean {
+        syncStateStore.delete(eventId)
+        return eventRepository.delete(eventId)
+    }
 
     /** Sensor collectors are stateful (start/stop), so each screen gets its own. */
     fun createSensorCollector(): SensorSnapshotCollector = SensorSnapshotCollector(appContext)

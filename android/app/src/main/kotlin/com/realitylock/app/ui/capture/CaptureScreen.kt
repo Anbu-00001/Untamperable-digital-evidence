@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.annotation.StringRes
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
@@ -48,9 +49,15 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.realitylock.app.R
 import com.realitylock.app.capture.LocationSource
 import com.realitylock.app.capture.model.CapturedEvent
+import com.realitylock.app.core.config.CertificateConfig
+import com.realitylock.app.sync.SyncStage
+import com.realitylock.app.sync.SyncState
 import com.realitylock.app.ui.analyze.AnalyzeScreen
 import com.realitylock.app.ui.analyze.AnalyzeViewModel
 import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
+import com.realitylock.app.ui.verify.AuthenticityResultPanel
+import com.realitylock.app.ui.verify.ProofsViewModel
+import com.realitylock.app.verify.VerificationReport
 
 /**
  * Capture screen: live preview, a shutter that records a tamper-evident event,
@@ -65,6 +72,7 @@ import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
 fun CaptureScreen(
     viewModel: CaptureViewModel,
     analyzeViewModel: AnalyzeViewModel,
+    proofsViewModel: ProofsViewModel,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -141,6 +149,7 @@ fun CaptureScreen(
             1 -> HistoryTab(
                 events = uiState.events,
                 onDelete = viewModel::deleteEvent,
+                proofsViewModel = proofsViewModel,
             )
 
             2 -> AnalyzeScreen(viewModel = analyzeViewModel)
@@ -275,8 +284,22 @@ private fun PermissionRequestPanel(
     }
 }
 
+/**
+ * The queue/history view, which in Phase 5 is also where sync state, verification
+ * and certificate export live — everything about a stored proof, on the proof.
+ */
 @Composable
-private fun HistoryTab(events: List<CapturedEvent>, onDelete: (String) -> Unit) {
+private fun HistoryTab(
+    events: List<CapturedEvent>,
+    onDelete: (String) -> Unit,
+    proofsViewModel: ProofsViewModel,
+) {
+    val proofsState by proofsViewModel.uiState.collectAsState()
+
+    // Sync badges are read from disk, so they need refreshing when the tab is
+    // shown again — a background pass may have completed in the meantime.
+    LaunchedEffect(events.size) { proofsViewModel.refreshSyncStates() }
+
     if (events.isEmpty()) {
         Column(
             modifier = Modifier
@@ -292,20 +315,164 @@ private fun HistoryTab(events: List<CapturedEvent>, onDelete: (String) -> Unit) 
         return
     }
 
+    val certificateFraming = listOf(
+        stringResource(R.string.certificate_framing_1),
+        stringResource(R.string.certificate_framing_2),
+        stringResource(R.string.certificate_framing_3),
+        stringResource(R.string.certificate_framing_4),
+    )
+    val certificateTitle = stringResource(R.string.certificate_title)
+    val verdictLabel = proofsState.report?.let { stringResource(it.verdict.uiLabelRes()) }
+        ?: stringResource(R.string.verify_verdict_unknown)
+
+    // The system "save as" dialog. Nothing is written to storage unless the user
+    // chooses a destination — no storage permission is involved on any API level.
+    val context = LocalContext.current
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(CertificateConfig.MIME_TYPE_PDF),
+    ) { uri ->
+        val pending = proofsState.pendingCertificate
+        if (uri == null || pending == null) {
+            proofsViewModel.clearPendingCertificate()
+            return@rememberLauncherForActivityResult
+        }
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(pending.bytes) }
+                ?: error("could not open the chosen file for writing")
+        }.fold(
+            onSuccess = { proofsViewModel.clearPendingCertificate() },
+            onFailure = { proofsViewModel.reportCertificateError(it.message ?: it.toString()) },
+        )
+    }
+
+    // Launch the picker once a certificate has been rendered.
+    LaunchedEffect(proofsState.pendingCertificate) {
+        proofsState.pendingCertificate?.let { saveLauncher.launch(it.fileName) }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item {
+            SyncSummaryPanel(
+                syncRequested = proofsState.syncRequested,
+                onSyncNow = proofsViewModel::requestSync,
+                onDismiss = proofsViewModel::dismissSyncNotice,
+            )
+        }
+
+        proofsState.verifyError?.let { reason ->
+            item {
+                Text(
+                    stringResource(R.string.verify_unreachable, reason),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+
+        proofsState.certificateError?.let { reason ->
+            item {
+                Text(
+                    stringResource(R.string.certificate_save_failed, reason),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+
         items(events, key = { it.eventId }) { event ->
-            EventCard(event = event, onDelete = { onDelete(event.eventId) })
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                EventCard(
+                    event = event,
+                    onDelete = { onDelete(event.eventId) },
+                    syncState = proofsState.syncStates[event.eventId],
+                    isVerifying = proofsState.verifyingEventId == event.eventId,
+                    isBuildingCertificate = proofsState.buildingCertificateFor == event.eventId,
+                    onVerify = { proofsViewModel.verify(event.eventId) },
+                    onRetrySync = { proofsViewModel.retrySync(event.eventId) },
+                    onExportCertificate = {
+                        proofsViewModel.buildCertificate(
+                            eventId = event.eventId,
+                            title = certificateTitle,
+                            verdictLabel = verdictLabel,
+                            framing = certificateFraming,
+                            checkLabeller = { it },
+                        )
+                    },
+                )
+
+                // The result sits directly beneath the event it describes, so a
+                // verdict can never be read against the wrong capture.
+                if (proofsState.reportEventId == event.eventId) {
+                    proofsState.report?.let { report ->
+                        AuthenticityResultPanel(
+                            report = report,
+                            onClose = proofsViewModel::dismissReport,
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
+/** Offline-first explanation plus a manual "sync now" trigger. */
 @Composable
-private fun EventCard(event: CapturedEvent, onDelete: (() -> Unit)? = null) {
+private fun SyncSummaryPanel(
+    syncRequested: Boolean,
+    onSyncNow: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                stringResource(R.string.sync_offline_note),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (syncRequested) {
+                Text(
+                    stringResource(R.string.sync_queued),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.capture_dismiss_error))
+                }
+            } else {
+                Button(onClick = onSyncNow) { Text(stringResource(R.string.sync_now)) }
+            }
+        }
+    }
+}
+
+/** Verdict label for the certificate, mirroring the on-screen wording. */
+@StringRes
+private fun VerificationReport.Verdict.uiLabelRes(): Int = when (this) {
+    VerificationReport.Verdict.VERIFIED -> R.string.verify_verdict_verified
+    VerificationReport.Verdict.FAILED -> R.string.verify_verdict_failed
+    VerificationReport.Verdict.INCOMPLETE -> R.string.verify_verdict_incomplete
+    VerificationReport.Verdict.INVALID_FORMAT -> R.string.verify_verdict_invalid_format
+    VerificationReport.Verdict.UNKNOWN -> R.string.verify_verdict_unknown
+}
+
+@Composable
+private fun EventCard(
+    event: CapturedEvent,
+    onDelete: (() -> Unit)? = null,
+    syncState: SyncState? = null,
+    isVerifying: Boolean = false,
+    isBuildingCertificate: Boolean = false,
+    onVerify: (() -> Unit)? = null,
+    onRetrySync: (() -> Unit)? = null,
+    onExportCertificate: (() -> Unit)? = null,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -388,11 +555,69 @@ private fun EventCard(event: CapturedEvent, onDelete: (() -> Unit)? = null) {
                 },
             )
 
-            onDelete?.let {
-                TextButton(onClick = it) { Text(stringResource(R.string.history_delete)) }
+            // ---- Phase 5: where this proof stands on the backend ------------
+            syncState?.let { state ->
+                DetailRow(
+                    stringResource(R.string.sync_label),
+                    stringResource(state.stage.labelRes()),
+                )
+                // The reason is shown, not swallowed: a stalled sync with no
+                // explanation is indistinguishable from a broken app.
+                state.lastError?.let { error ->
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                onVerify?.let {
+                    TextButton(onClick = it, enabled = !isVerifying) {
+                        Text(
+                            stringResource(
+                                if (isVerifying) R.string.verify_running else R.string.verify_action,
+                            ),
+                        )
+                    }
+                }
+                onExportCertificate?.let {
+                    TextButton(onClick = it, enabled = !isBuildingCertificate) {
+                        Text(
+                            stringResource(
+                                if (isBuildingCertificate) {
+                                    R.string.certificate_generating
+                                } else {
+                                    R.string.certificate_action
+                                },
+                            ),
+                        )
+                    }
+                }
+                // Only offered when there is something to retry.
+                if (syncState?.stage == SyncStage.FAILED && onRetrySync != null) {
+                    TextButton(onClick = onRetrySync) {
+                        Text(stringResource(R.string.sync_retry))
+                    }
+                }
+                onDelete?.let {
+                    TextButton(onClick = it) { Text(stringResource(R.string.history_delete)) }
+                }
             }
         }
     }
+}
+
+@StringRes
+private fun SyncStage.labelRes(): Int = when (this) {
+    SyncStage.PENDING -> R.string.sync_stage_pending
+    SyncStage.PACKAGE_STORED -> R.string.sync_stage_package_stored
+    SyncStage.COMPLETE -> R.string.sync_stage_complete
+    SyncStage.FAILED -> R.string.sync_stage_failed
 }
 
 @Composable
