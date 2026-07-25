@@ -61,30 +61,83 @@ root                                                     = 63e7fd2d…6c792270
 ```
 
 ## Verification order (consumer, backend)
-`research/02` §8, Step 10, exposed as the `/verify` per-check breakdown.
-Implemented in Phase 3: `schemaValid → mediaHashMatch → metadataHashMatch →
-merkleRootMatch → signatureValid → attestationPresent → attestationChainValid →
-attestationKeyBinding`. Deferred to Phase 4/5: `timestampPlausible`,
-`locationPlausible`.
+`research/02` §8, Step 10, exposed as the `/verify` per-check breakdown. **All
+five checks are implemented** as of Phase 5:
 
-Three properties of the breakdown are deliberate:
+`schemaValid → mediaHashMatch → metadataHashMatch → merkleRootMatch →
+signatureValid → attestationPresent → attestationChainValid →
+attestationKeyBinding → timestampPlausible → locationPlausible`
 
-- **`unavailable` is not `pass`.** A check that could not be run (e.g. the media
-  bytes were not supplied) reports `unavailable`, and the overall verdict stays
-  `incomplete`. Absence of evidence must never read as evidence.
+Four properties of the breakdown are deliberate:
+
+- **`unavailable` is not `pass`.** A check that could not be run reports
+  `unavailable`. Absence of evidence must never read as evidence — in either
+  direction, which is why a *missing* attestation chain is `unavailable` with an
+  advisory rather than `fail`.
 - **`attestationKeyBinding` is load-bearing.** It asserts that the public key in
   `signature.publicKey` is the same key the attestation chain attests. Without
   it, a genuine chain could be stapled onto a package signed by a different key.
 - **A failure names what failed.** "The media was altered" and "we could not
   reach the revocation list" are different statements and never collapse into
   one boolean.
+- **Non-blocking findings are `advisories`.** A mock-provider location, or a
+  location that could not be cross-checked, is reported without condemning the
+  package. See the verdict rules below.
+
+### The two plausibility checks (Phase 5)
+- **`timestampPlausible`** is decisive, and only fails on the genuinely
+  impossible. Three sub-checks: the producer's own derivation identity
+  `wallClockMillis == floor(elapsedRealtimeNanos / 1e6) + wallClockOffsetMillis`
+  (an **exact** integer identity, not a tolerance); `iso8601` denoting the same
+  instant as `wallClockMillis`; and the capture not claiming to be in the
+  verifier's future beyond a configured skew. There is deliberately **no**
+  "captures cannot predate date X" rule — that would be an arbitrary literal
+  posing as a security property.
+- **`locationPlausible`** recomputes the Haversine implied speed between this
+  event and the previous stored event **from the same `installId`**, against
+  `1500 km/h` with 1 s / 50 m jitter guards (ADR-0005 §2). It needs stored
+  history, so a first-ever capture is `unavailable`, never a pass. This is the
+  authoritative answer; the device's own unsigned `integrity.location.speedPlausible`
+  is advisory, and a disagreement is surfaced rather than reconciled away.
+- `gpsTimeMillis` vs the wall clock is **advisory only**: a fused/network provider
+  often derives `getTime()` from the very system clock under examination, so
+  agreement proves little and only a gross divergence is informative.
+
+### Verdict rules (ADR-0006 §5)
+Two rules, in order:
+1. **`failed`** — *any* check returned `fail`. This deliberately reaches beyond
+   the cryptographic checks: an attestation chain that is present but does not
+   bind to the signing key, or a physically impossible implied speed, are real
+   findings.
+2. Otherwise every **decisive** check must have passed — `mediaHashMatch`,
+   `metadataHashMatch`, `merkleRootMatch`, `signatureValid`,
+   `timestampPlausible`. One that could not be run gives **`incomplete`** (most
+   often `mediaHashMatch`, when no media was available). All passing gives
+   **`verified`**.
 
 ### Request shapes
 `POST /verify` accepts either a bare proof package, or an envelope
 `{ "package": {...}, "mediaBase64": "..." }` when the media is available for the
 media-leaf check. The media cannot travel *inside* the package: the schema sets
 `additionalProperties: false` at the root, so an extra key would correctly make a
-genuine package fail validation.
+genuine package fail validation. **If no media is supplied, the verifier falls
+back to its own stored copy**, so a synced package verifies fully without the
+client re-uploading bytes the server already has.
+
+`GET /verify/<eventId>` verifies a stored package and returns **only** the
+verdict, checks, advisories and limitations — never the package. The `eventId` is
+an unguessable v4 UUID acting as a capability token, but the package it names
+contains GPS coordinates, and a scannable verification badge must not double as a
+location leak (ADR-0006 §7).
+
+## Storage (Phase 5)
+`POST /proof` stores a package **immutably**: a byte-identical resubmission
+succeeds idempotently (the sync worker retries and cannot always know whether an
+earlier attempt landed), while a submission that would *change* a stored package
+is a `409`. `POST /proof/<eventId>/media` takes raw bytes and accepts them **only
+if they hash to the digest the signed package already commits to**, so the store
+cannot be made to hold media that no validly-signed package vouches for. Media is
+addressed by content, which also de-duplicates it.
 
 ## Limitations (must ship with every verifier UI)
 Per `research/02` §7 and `research/06` §7: a passing package proves the bundle of media+metadata is **unaltered since capture and signed by a specific (hardware-backed) key** — it does **not** prove the depicted event was real/unstaged, and it is **not** a standalone legal certificate (India's BSA 2023 §63 requires human dual-certification). The verdict wording must never overclaim.

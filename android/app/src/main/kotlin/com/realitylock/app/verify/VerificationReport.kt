@@ -11,7 +11,7 @@ package com.realitylock.app.verify
  */
 data class VerificationReport(
     val verdict: Verdict,
-    /** Ordered so the display sequence is stable and matches the spec's order. */
+    /** Ordered by [DISPLAY_ORDER] so the sequence is stable across responses. */
     val checks: List<Check>,
     /** Explanations of individual check outcomes. */
     val notes: List<String>,
@@ -27,6 +27,41 @@ data class VerificationReport(
 ) {
 
     data class Check(val name: String, val outcome: Outcome)
+
+    companion object {
+        /**
+         * The order checks are displayed in, following `research/02` §8 Step 10:
+         * media, metadata, Merkle, signature, attestation, timestamp, location.
+         *
+         * Declared here rather than taken from the response because **JSON object
+         * key order is not dependable** — `org.json.JSONObject` is HashMap-backed
+         * and enumerates keys in an arbitrary order, so reading the server's key
+         * order produced a different sequence on every run. Presentation order is a
+         * UI concern in any case; the backend's job is to say what each check
+         * returned, not how to lay it out.
+         *
+         * A check absent from this list still appears, at the end — a newer backend
+         * reporting an extra check must be visible, not silently dropped.
+         */
+        val DISPLAY_ORDER: List<String> = listOf(
+            "schemaValid",
+            "mediaHashMatch",
+            "metadataHashMatch",
+            "merkleRootMatch",
+            "signatureValid",
+            "attestationPresent",
+            "attestationChainValid",
+            "attestationKeyBinding",
+            "timestampPlausible",
+            "locationPlausible",
+        )
+
+        /** Sorts checks into [DISPLAY_ORDER], unknown names last but retained. */
+        fun sortForDisplay(checks: List<Check>): List<Check> =
+            checks.sortedBy { check ->
+                DISPLAY_ORDER.indexOf(check.name).takeIf { it >= 0 } ?: DISPLAY_ORDER.size
+            }
+    }
 
     enum class Outcome {
         PASS,

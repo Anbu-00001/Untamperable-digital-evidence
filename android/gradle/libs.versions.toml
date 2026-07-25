@@ -162,6 +162,10 @@ json-schema-validator = { group = "com.networknt", name = "json-schema-validator
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+# GrantPermissionRule lives here, not in espresso-core. Needed for the Phase-6 UI
+# smoke tests, because a device that blocks `adb shell pm grant` (ColorOS does)
+# leaves the in-test grant as the only way to satisfy camera/location.
+androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "androidxTestCore" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
 

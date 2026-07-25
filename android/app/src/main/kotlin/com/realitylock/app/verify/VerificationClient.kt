@@ -89,10 +89,10 @@ class VerificationClient(
     /**
      * Maps the JSON response onto [VerificationReport].
      *
-     * Check order follows the server's key order, which follows the spec's order
-     * (media, metadata, Merkle, signature, attestation, timestamp, location) — so
-     * the UI reads in the same sequence as the design document, without the app
-     * hardcoding a list that could fall out of step with the backend.
+     * Checks are sorted into [VerificationReport.DISPLAY_ORDER] rather than left in
+     * the order `JSONObject.keys()` yields them: that iteration order is arbitrary
+     * (HashMap-backed), so relying on it produced a different sequence on every
+     * call. Unknown check names are kept and appended.
      */
     internal fun parseReport(json: JSONObject): VerificationReport {
         val checksJson = json.optJSONObject(KEY_CHECKS)
@@ -109,7 +109,7 @@ class VerificationClient(
 
         return VerificationReport(
             verdict = VerificationReport.Verdict.parse(json.optString(KEY_VERDICT)),
-            checks = checks,
+            checks = VerificationReport.sortForDisplay(checks),
             notes = json.stringList(KEY_NOTES),
             advisories = json.stringList(KEY_ADVISORIES),
             limitations = json.stringList(KEY_LIMITATIONS),

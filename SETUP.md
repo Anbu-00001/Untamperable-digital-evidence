@@ -52,28 +52,78 @@ cd android
 ### 2.3 Open & build
 1. Open the **`android/`** folder in Android Studio (not the repo root).
 2. Let Gradle sync. **If sync proposes a version adjustment** (AGP/Kotlin/KSP/CameraX), make the change in **`android/gradle/libs.versions.toml`** only — never in a module build file. Keep `kotlin`, `ksp`, and `composeCompiler` versions identical to each other, and check each library's *minimum AGP* before bumping (the catalog header explains the AGP-8.13 ceiling).
-3. Run the `app` configuration. You should see the **Capture** screen with three tabs — *Capture*, *History*, and *Device*. The Device tab carries the old foundation-status readouts (app version, backend URL, proof schema, device capabilities) and confirms the config plumbing end to end.
+3. Run the `app` configuration. You should see the **Capture** screen with four tabs — *Capture*, *History*, *Analyze*, and *Device*. **History** is where Phase 5 lives: per-event sync state, **Verify**, and **Certificate**. The Device tab carries the foundation-status readouts (app version, backend URL, proof schema, device capabilities, attestation tier, GNSS capability).
 
 Useful checks:
 ```bash
-./gradlew :app:testDebugUnitTest    # 48 unit tests, incl. real schema validation
-cd ../backend && npm run validate:schema
+./gradlew :app:testDebugUnitTest         # 141 JVM unit tests, incl. real schema validation
+./gradlew :app:connectedDebugAndroidTest # 6 instrumented tests (needs a device)
+cd ../backend && npm run validate:schema && npm test
 ```
 
 ### 2.4 Per-machine config overrides (optional)
 Defaults live in `android/gradle.properties`. To override for your machine, copy `android/local.properties.example` → `android/local.properties` (gitignored) and set:
-- `REALITYLOCK_BACKEND_BASE_URL` — use your LAN IP for a physical device (emulator uses `http://10.0.2.2:3000/` by default).
+- `REALITYLOCK_BACKEND_BASE_URL` — see §2.5 for the physical-device route (emulator uses `http://10.0.2.2:3000/` by default).
 - `REALITYLOCK_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER` — from §4 below.
+
+### 2.5 Pointing a USB-connected phone at a backend on your laptop
+Use `adb reverse` rather than hunting for a LAN IP: it makes the laptop's port
+reachable at `127.0.0.1` **on the phone**, works on any network (or none), and
+needs no firewall changes.
+```bash
+adb reverse tcp:3000 tcp:3000
+# then build/install with the phone-side URL:
+cd android && ./gradlew :app:installDebug -PREALITYLOCK_BACKEND_BASE_URL=http://127.0.0.1:3000/
+```
+Re-run `adb reverse` after the phone reconnects or the adb daemon restarts.
+
+Cleartext HTTP is permitted **only in debug builds**, via
+[`app/src/debug/AndroidManifest.xml`](android/app/src/debug/AndroidManifest.xml).
+Release builds keep Android's default block, because a proof package contains GPS
+coordinates and shipping those unencrypted is not acceptable.
 
 ---
 
-## 3. Firebase (Phase 5 — not required until then)
-1. Create a project at [console.firebase.google.com](https://console.firebase.google.com/).
-2. Add an **Android app** with package name `com.realitylock.app`.
-3. Download **`google-services.json`** into `android/app/` (it is gitignored).
-4. Enable **Firestore**, **Cloud Storage**, and **Authentication**.
-5. Backend: set `FIREBASE_PROJECT_ID` / `FIREBASE_STORAGE_BUCKET` in `backend/.env`.
-6. Wiring (Firebase Gradle plugin + SDKs) is uncommented in `android/app/build.gradle.kts` during Phase 5 per the phase plan.
+## 3. Storage: what Phase 5 actually uses, and why it is not Firebase Storage
+
+**Firebase Cloud Storage is no longer free.** Since **2026-02-03** Google requires a
+linked billing account (the Blaze plan) to create or keep a bucket at all,
+regardless of volume; a project left on Spark gets HTTP 402/403 on every bucket
+call. **Firestore is unaffected** — it stays free on Spark with a 1 GiB /
+20 000-writes-a-day quota and **no card**.
+
+So Phase 5 splits the two (see [ADR-0006](docs/design/adr/ADR-0006-phase5-sync-storage-and-verification.md) §1):
+
+| What | Where | Cost |
+|---|---|---|
+| Proof packages (small JSON) | backend store; Firestore is the config-gated durable option | **$0, no card** |
+| Media (large bytes) | backend's **content-addressed** store, never Firebase | **$0, no card** |
+
+This costs nothing evidentiary, because **the proof package binds the media by
+hash, not by location** — where the bytes live is a durability question, not an
+authenticity one. The authoritative copy stays on the device.
+
+**Nothing needs configuring to run it.** The default `filesystem` driver writes to
+`backend/.data/` (gitignored) and works out of the box:
+```
+backend/.data/packages/<eventId>.json     written once, never rewritten
+backend/.data/media/<sha256>              named by its own digest
+```
+Optional env overrides: `STORE_DRIVER` (`filesystem` | `memory`),
+`STORE_DATA_DIR`, `MAX_MEDIA_BYTES`.
+
+> **Free-tier hosting caveat:** Render's free tier has an **ephemeral filesystem
+> and cannot attach a persistent disk**, so a redeploy discards `.data/`. Fine for
+> a demo; if you need packages to survive a redeploy, that is what the Firestore
+> adapter is for.
+
+### 3.1 If you *do* want Firestore (optional, still free)
+1. Create a project at [console.firebase.google.com](https://console.firebase.google.com/) — **stay on Spark; do not upgrade to Blaze.**
+2. Enable **Firestore** only. Do **not** enable Cloud Storage (that is the part that wants a card).
+3. Set `FIREBASE_PROJECT_ID` in `backend/.env`.
+
+There is no `google-services.json` and no Firebase Android SDK: the app talks only
+to our own backend, so nothing Firebase-shaped is on the device at all.
 
 ## 4. Play Integrity + Google Cloud (Phase 3 — not required until then)
 1. Create/reuse a **Google Play Console** app entry (internal testing track is enough — no public release needed).

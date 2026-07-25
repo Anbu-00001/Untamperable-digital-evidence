@@ -90,7 +90,54 @@ PASS  ela_analyzer_produces_a_heatmap_of_matching_size
 ```
 Evidence — including the ELA heat-map lighting up a known splice — in [docs/evidence/phase4-forensics/](docs/evidence/phase4-forensics/). **86 unit tests + 3 instrumented.**
 
-**Next:** Phase 5 — backend sync, storage, and the full verification module.
+### Phase 5 (Backend, Storage & Verification Module) — complete, verified on device
+- **Offline-first sync**: capture with no connectivity and the upload waits on a
+  `CONNECTED`-constrained WorkManager job, then runs **by itself** when a network
+  returns. Two steps — the small package first, then the media — so a capture
+  stranded between them is a distinguishable state, not a mystery.
+- **The signed package file is now provably write-once.** Sync state is mutable, so
+  it lives in a *separate* `sync/<eventId>.json`; the captures directory holds
+  nothing but immutable evidence ([ADR-0006](docs/design/adr/ADR-0006-phase5-sync-storage-and-verification.md) §3).
+- **Evidence is forwarded, never re-encoded.** The app ships the exact stored bytes
+  over plain OkHttp — no Retrofit, no Gson model. Re-serializing a signed document
+  could change number formatting or escaping and break the metadata hash, and the
+  failure would be indistinguishable from tampering. A unit test asserts the bytes
+  on the wire equal the bytes on disk.
+- **Immutable, content-addressed storage**: `POST /proof` is idempotent for a
+  byte-identical retry and `409` for a rewrite; media is accepted **only if it
+  hashes to the digest the signed package commits to**, so the store cannot be made
+  to hold media no valid package vouches for.
+- **All five verification checks now implemented.** `timestampPlausible` checks the
+  producer's *exact* derivation identity (`wallClockMillis == elapsed/1e6 + offset`),
+  the ISO-8601 rendering, and that nothing was captured in the future.
+  `locationPlausible` recomputes implied speed against the previous stored capture
+  from the same install — which is why it needed the store.
+- **Authenticity Result UI** with the per-check breakdown, non-blocking
+  **advisories**, and the limitations block rendered *even on a pass*.
+- **PDF certificate** via Android's own `PdfDocument` + a zxing QR badge, with the
+  "what this does not prove" framing boxed at the **top**, before any hash or
+  verdict — and enforced in the constructor, so a certificate without its caveats
+  cannot be built.
+
+**Two findings worth recording:**
+1. **Firebase Cloud Storage stopped being free** — since 2026-02-03 it requires a
+   linked billing account. Firestore is still free on Spark with no card. So media
+   goes to our content-addressed store instead, which costs nothing evidentiary:
+   **the package binds media by hash, not by location.** Phase 5 remains $0, no card.
+2. **`unavailable` must not read as `fail`.** A missing attestation chain used to
+   report `fail`, which wrongly condemned every package from a device that cannot
+   attest. It is now `unavailable` plus an advisory, and the verdict rules are
+   pinned in ADR-0006 §5.
+
+**Exit criteria proven on the physical CPH2591** by [`scripts/e2e/run_sync_e2e.sh`](scripts/e2e/run_sync_e2e.sh),
+which drives a real capture in **airplane mode** against a real backend over
+`adb reverse`. **141 unit tests + 6 instrumented + 68 backend.**
+
+**Not built (stated, not hidden):** no authentication or rate limiting on the
+backend — anyone who can reach it can submit or verify. Acceptable for coursework,
+and Phase-6 hardening work.
+
+**Next:** Phase 6 — testing, security validation, deployment.
 
 ## Quick start
 ```bash
@@ -115,6 +162,20 @@ both the shared schema **and** Phase 2's exit criteria (a document where every
 optional field is null would still be schema-valid, so validity alone is not
 enough). Last run on a OnePlus CPH2591: **11 passed, 0 failed**, motion bound
 0.76 / 1.27 / 4.49 ms from the shutter.
+
+### Phase 5: offline sync, storage and verification
+```bash
+./scripts/e2e/run_sync_e2e.sh
+```
+Puts the **real phone into airplane mode**, captures, proves nothing reached the
+server, restores connectivity and then **taps nothing** — the queued upload has
+to fire by itself. Then checks immutability, hash-enforced media, all five
+verification checks, tamper detection, and that the public QR endpoint leaks no
+GPS. The phone reaches the laptop over `adb reverse`, so a USB cable is the only
+networking required, and the device is left exactly as it was found. Last run on
+a OnePlus CPH2591: **33 passed, 0 failed**; the queued capture synced 4 s after
+connectivity returned. Details in
+[docs/evidence/phase5-sync-verification/](docs/evidence/phase5-sync-verification/).
 
 ## What this proves (and does not)
 A passing proof package certifies the media+metadata bundle is **unaltered since capture and signed by a specific hardware-backed key**. It does **not** prove the depicted event was real/unstaged, and is **not** a standalone legal certificate. This honesty is by design — see [`docs/design/PROOF_PACKAGE_SPEC.md`](docs/design/PROOF_PACKAGE_SPEC.md) and `research/06_legal_standards_compliance.md` §7.

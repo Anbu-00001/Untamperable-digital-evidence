@@ -1,19 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    DEBUG-ONLY manifest overlay.
+    DEBUG-ONLY manifest overlay. None of this reaches a release build.
 
-    Permits cleartext HTTP so a debug build can reach a backend running on a
-    developer machine (`http://127.0.0.1:3000/` over `adb reverse`, or an
-    emulator's `http://10.0.2.2:3000/`). Since API 28 the platform blocks
-    cleartext by default, which is correct and stays in force for release builds:
-    this file does not apply to them.
+    1. `usesCleartextTraffic` — so a debug build can reach a backend running on a
+       developer machine (`http://127.0.0.1:3000/` over `adb reverse`, or an
+       emulator's `http://10.0.2.2:3000/`). Since API 28 the platform blocks
+       cleartext by default, which is correct and stays in force for release.
+       A proof package contains GPS coordinates, so shipping a release that would
+       send them unencrypted is not acceptable — hence the overlay.
 
-    A proof package contains GPS coordinates, so shipping a release that would
-    send them unencrypted is not acceptable — hence the overlay rather than
-    setting usesCleartextTraffic in the main manifest.
+    2. `ACCESS_MOCK_LOCATION` — required to run the Phase-6 security-validation
+       scenario "mock-location app active -> flagged" against the REAL fused
+       provider. `FusedLocationProviderClient.setMockMode()/setMockLocation()`
+       require both this permission and the app to be chosen under
+       Developer options -> Select mock location app.
+
+       This is the honest way to test our own mock detection: the alternative is
+       a third-party fake-GPS app, which tests that app's behaviour rather than
+       ours, and cannot be automated.
+
+       It is emphatically debug-only. An app that ships this permission in a
+       release build is an app that can fake its own evidence, which would defeat
+       the entire point of the project.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission
+        android:name="android.permission.ACCESS_MOCK_LOCATION"
+        tools:ignore="MockLocation,ProtectedPermissions" />
 
     <application
         android:usesCleartextTraffic="true"

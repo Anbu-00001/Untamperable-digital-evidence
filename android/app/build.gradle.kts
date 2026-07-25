@@ -196,4 +196,9 @@ dependencies {
     // testImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    // GrantPermissionRule — the in-test permission grant. It matters here because
+    // this project's target device refuses `adb shell pm grant` outright, so if
+    // this route did not work either, no instrumented test could ever exercise
+    // the camera or location paths.
+    androidTestImplementation(libs.androidx.test.rules)
 }
