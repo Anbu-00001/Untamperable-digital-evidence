@@ -6,12 +6,20 @@
 # sidecars, check them against the shared schema AND Phase 2's exit criteria,
 # then feed them to the backend's /proof and /verify routes.
 #
-# Everything is discovered at run time — no hardcoded tap coordinates, ports,
-# package names or paths.
+# Discovered at run time: the device, the application id, a free port, and the
+# shutter button's screen coordinates (never tapped by fixed x/y).
+# Read from the app's own source via app_constants.sh: the shutter button's
+# label and the on-disk `captures` directory name.
+# Still mirrored by hand: the debug APK's output path and the launcher activity's
+# class name.
 #
 # Usage:  scripts/e2e/run_e2e.sh [captures]      (default 3)
 #         SKIP_DEVICE=1 scripts/e2e/run_e2e.sh  (backend + unit tests only)
 set -uo pipefail
+
+# Values shared with the app (shutter label, on-disk subdirectory names),
+# read from its own source so this script and the app cannot drift apart.
+. "$(dirname "${BASH_SOURCE[0]}")/app_constants.sh"
 
 CAPTURES="${1:-3}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -133,9 +141,9 @@ for m in re.finditer(r'text=\"([^\"]*)\"[^>]*?bounds=\"\[(\d+),(\d+)\]\[(\d+),(\
       adb -s "$DEVICE" shell input tap $coords
     }
 
-    BEFORE_COUNT="$(adb -s "$DEVICE" shell run-as "$PKG" ls files/captures/ 2>/dev/null | grep -c '\.json' || echo 0)"
+    BEFORE_COUNT="$(adb -s "$DEVICE" shell run-as "$PKG" ls files/$CAPTURES_SUBDIR/ 2>/dev/null | grep -c '\.json' || echo 0)"
     for i in $(seq 1 "$CAPTURES"); do
-      if tap_by_text "Capture event"; then
+      if tap_by_text "$SHUTTER_LABEL"; then
         echo "  capture $i triggered"
       else
         bad "could not find the 'Capture event' button (permissions granted?)"
@@ -143,18 +151,18 @@ for m in re.finditer(r'text=\"([^\"]*)\"[^>]*?bounds=\"\[(\d+),(\d+)\]\[(\d+),(\
       fi
       sleep 6
     done
-    AFTER_COUNT="$(adb -s "$DEVICE" shell run-as "$PKG" ls files/captures/ 2>/dev/null | grep -c '\.json' || echo 0)"
+    AFTER_COUNT="$(adb -s "$DEVICE" shell run-as "$PKG" ls files/$CAPTURES_SUBDIR/ 2>/dev/null | grep -c '\.json' || echo 0)"
     NEW=$((AFTER_COUNT - BEFORE_COUNT))
     if [ "$NEW" -ge 1 ]; then ok "$NEW new event(s) recorded on device"; else bad "no new events recorded"; fi
 
     # ------------------------------------------------------------------
     step "6. Pulled sidecars satisfy the schema AND Phase 2 exit criteria"
     mkdir -p "$WORK/events"
-    for f in $(adb -s "$DEVICE" shell run-as "$PKG" ls -t files/captures/ 2>/dev/null | tr -d '\r' | grep '\.json$' | head -"$CAPTURES"); do
-      adb -s "$DEVICE" shell run-as "$PKG" cat "files/captures/$f" > "$WORK/events/$f" 2>/dev/null
+    for f in $(adb -s "$DEVICE" shell run-as "$PKG" ls -t files/$CAPTURES_SUBDIR/ 2>/dev/null | tr -d '\r' | grep '\.json$' | head -"$CAPTURES"); do
+      adb -s "$DEVICE" shell run-as "$PKG" cat "files/$CAPTURES_SUBDIR/$f" > "$WORK/events/$f" 2>/dev/null
       # Media must exist beside the sidecar (the "JPEG file reference" criterion).
       JPG="${f%.json}.jpg"
-      SIZE="$(adb -s "$DEVICE" shell run-as "$PKG" stat -c %s "files/captures/$JPG" 2>/dev/null | tr -d '\r')"
+      SIZE="$(adb -s "$DEVICE" shell run-as "$PKG" stat -c %s "files/$CAPTURES_SUBDIR/$JPG" 2>/dev/null | tr -d '\r')"
       if [ -n "$SIZE" ] && [ "$SIZE" -gt 0 ] 2>/dev/null; then
         echo "  media  $JPG (${SIZE} bytes)"
       else
@@ -172,7 +180,7 @@ for m in re.finditer(r'text=\"([^\"]*)\"[^>]*?bounds=\"\[(\d+),(\d+)\]\[(\d+),(\
     for f in "$WORK/events"/*.json; do
       [ -e "$f" ] || continue
       EVENT_ID="$(basename "$f" .json)"
-      adb -s "$DEVICE" exec-out run-as "$PKG" cat "files/captures/$EVENT_ID.jpg" > "$WORK/media.jpg" 2>/dev/null
+      adb -s "$DEVICE" exec-out run-as "$PKG" cat "files/$CAPTURES_SUBDIR/$EVENT_ID.jpg" > "$WORK/media.jpg" 2>/dev/null
 
       # Envelope form: the media travels beside the package, never inside it —
       # the schema forbids extra root properties, and rightly so.

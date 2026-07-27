@@ -13,14 +13,21 @@
 #   5. An edited package is reported `failed`, with the correct check flagged.
 #   6. The public QR endpoint returns a verdict and leaks no GPS.
 #
-# Nothing about the environment is hardcoded: the package name, a free port and
-# the shutter button are all discovered at run time. The app is pointed at the
-# host over `adb reverse`, so this works over USB with no LAN setup and no
-# changes to the committed configuration.
+# Discovered at run time: the device, the application id, and a free port.
+# Read from the app's own source via app_constants.sh, so they cannot drift: the
+# shutter button's label and the on-disk `captures`/`sync` directory names.
+# Still mirrored by hand, and the two places must be changed together: the debug
+# APK's output path and the launcher activity's class name.
+# The app is pointed at the host over `adb reverse`, so this works over USB with
+# no LAN setup and no changes to the committed configuration.
 #
 # Usage:  ./scripts/e2e/run_sync_e2e.sh
 # =============================================================================
 set -uo pipefail
+
+# Values shared with the app (shutter label, on-disk subdirectory names),
+# read from its own source so this script and the app cannot drift apart.
+. "$(dirname "${BASH_SOURCE[0]}")/app_constants.sh"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
@@ -147,7 +154,7 @@ fi
 # cannot be restored from the shell, which is precisely how an earlier version of
 # this script wedged itself. Scoping the reset to our two directories keeps the
 # permissions and touches nothing else.
-adb -s "$DEVICE" shell run-as "$PKG" rm -rf files/captures files/sync >/dev/null 2>&1
+adb -s "$DEVICE" shell run-as "$PKG" rm -rf files/$CAPTURES_SUBDIR files/$SYNC_SUBDIR >/dev/null 2>&1
 ok "capture and sync directories reset (permissions left intact)"
 
 # ---- helpers ---------------------------------------------------------------
@@ -168,13 +175,13 @@ for m in re.finditer(r'text=\"([^\"]*)\"[^>]*?bounds=\"\[(\d+),(\d+)\]\[(\d+),(\
 
 # Count of stored proof sidecars in the app's private directory.
 device_event_count() {
-  adb -s "$DEVICE" shell run-as "$PKG" ls files/captures/ 2>/dev/null \
+  adb -s "$DEVICE" shell run-as "$PKG" ls files/$CAPTURES_SUBDIR/ 2>/dev/null \
     | tr -d '\r' | grep -c '\.json$'
 }
 
 # The id of the most recently stored event on the device.
 device_latest_event_id() {
-  adb -s "$DEVICE" shell run-as "$PKG" ls -t files/captures/ 2>/dev/null \
+  adb -s "$DEVICE" shell run-as "$PKG" ls -t files/$CAPTURES_SUBDIR/ 2>/dev/null \
     | tr -d '\r' | grep '\.json$' | head -1 | sed 's/\.json$//'
 }
 
@@ -184,7 +191,7 @@ device_latest_event_id() {
 device_sync_stage() {
   local id="$1"
   [ -z "$id" ] && { echo "NO_EVENT"; return; }
-  adb -s "$DEVICE" shell run-as "$PKG" cat "files/sync/$id.json" 2>/dev/null \
+  adb -s "$DEVICE" shell run-as "$PKG" cat "files/$SYNC_SUBDIR/$id.json" 2>/dev/null \
     | python3 -c "import sys,json;print(json.load(sys.stdin)['stage'])" 2>/dev/null \
     || echo "NO_STATE_FILE"
 }
@@ -213,7 +220,7 @@ adb -s "$DEVICE" shell am start -n "$PKG/.ui.MainActivity" >/dev/null 2>&1
 # Let CameraX bind and the sensor stream reach steady state before the shutter.
 sleep 10
 
-if tap_by_text "Capture event"; then
+if tap_by_text "$SHUTTER_LABEL"; then
   info "shutter tapped"
 else
   bad "could not find the 'Capture event' button"
@@ -314,7 +321,7 @@ fi
 
 # The device's copy of the package and the server's must be byte-identical: the
 # signature covers those bytes.
-adb -s "$DEVICE" shell run-as "$PKG" cat "files/captures/$EVENT_ID.json" 2>/dev/null \
+adb -s "$DEVICE" shell run-as "$PKG" cat "files/$CAPTURES_SUBDIR/$EVENT_ID.json" 2>/dev/null \
   | tr -d '\r' >"$WORK/device_pkg.json"
 if python3 - "$WORK/device_pkg.json" "$STORE_DIR/packages/$EVENT_ID.json" <<'PY'
 import json,sys
@@ -391,15 +398,22 @@ done
 
 # =============================================================================
 step "9b. Two more captures, so the history-dependent location check actually runs"
-# TWO, not one. The check compares against the most recent earlier event that has
-# a location, and the airplane-mode capture necessarily has none (no GNSS). So the
-# first online capture still reports `unavailable` — correctly — and only the
-# second one has a *located* predecessor to be compared against. That is the half
-# of the check which needed the store, and it is the half worth proving.
+# TWO, not one — though for a different reason than when this was written.
+#
+# The verifier now skips past predecessors that carry no location and compares
+# against the most recent *located* earlier event, so the airplane-mode capture no
+# longer blocks the check on its own. (It used to: the scan took the immediately
+# preceding event whatever it held, which meant a single location-less capture
+# suppressed the cross-check entirely — the loophole that change closed.)
+#
+# Two captures are kept because this step should exercise the multi-event history
+# path rather than the minimum that happens to work, and because whether any given
+# capture gets a fix indoors is not something the run controls. Either outcome is
+# accepted below, and both are honest.
 adb -s "$DEVICE" shell am start -n "$PKG/.ui.MainActivity" >/dev/null 2>&1
 sleep 8
 for n in 2 3; do
-  if tap_by_text "Capture event"; then
+  if tap_by_text "$SHUTTER_LABEL"; then
     for _ in $(seq 1 30); do
       [ "$(device_event_count)" -ge "$n" ] && break
       sleep 2

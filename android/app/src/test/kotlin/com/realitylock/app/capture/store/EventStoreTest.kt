@@ -153,4 +153,30 @@ class EventStoreTest {
         assertEquals("good", listed.first().eventId)
         assertNotNull(repo.findById("good"))
     }
+
+    @Test
+    fun `a sidecar with isMock stripped is rejected, not read as "not a mock"`() {
+        // `isMock` is schema-required and is the one location field an attacker
+        // would want gone: it drives the mock warning in the UI and the
+        // "REPORTED AS MOCK" line on an exported certificate. Reading it with a
+        // `false` default meant deleting the key produced the benign answer while
+        // the rest of the record still looked normal — so the fix is that its
+        // absence makes the whole sidecar unreadable, and an unreadable sidecar is
+        // already skipped rather than displayed.
+        val dir = tempFolder.newFolder("captures")
+        val repo = FileEventRepository(dir)
+        repo.save(sampleEvent(eventId = "tampered"))
+
+        val sidecar = File(dir, "tampered.json")
+        val stripped = sidecar.readText().let { text ->
+            assertTrue("fixture must contain isMock for this test to mean anything",
+                text.contains("\"isMock\""))
+            // Remove the key wherever it appears, leaving otherwise valid JSON.
+            text.replace(Regex(""","?\s*"isMock"\s*:\s*(true|false)"""), "")
+        }
+        sidecar.writeText(stripped)
+
+        assertNull("a record missing isMock must not be readable", repo.findById("tampered"))
+        assertTrue("and it must not appear in the listing", repo.list().isEmpty())
+    }
 }

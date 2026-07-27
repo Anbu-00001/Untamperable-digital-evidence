@@ -44,8 +44,7 @@ class CertificateRendererInstrumentedTest {
         signatureAlgorithm = "SHA256withECDSA",
         deviceDescription = "OnePlus CPH2591 (API 35)",
         locationSummary = "13.083, 80.271 (±5 m)",
-        verdictLabeller = { it.name },
-        notVerifiedLabel = "NOT VERIFIED",
+        verdictLabel = "VERIFIED",
         checksAbsentNotice = "This event has not been verified, so there is no breakdown to print.",
         checkRows = listOf(
             "Media unaltered" to "PASS",
