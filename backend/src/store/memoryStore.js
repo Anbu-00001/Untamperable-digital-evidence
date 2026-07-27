@@ -52,8 +52,13 @@ class MemoryPackageStore {
     return this.media.get(hash) || null;
   }
 
-  findPreviousPackage(installId, beforeWallClockMillis) {
-    return selectPreviousPackage([...this.packages.values()], installId, beforeWallClockMillis);
+  findPreviousPackage(installId, beforeWallClockMillis, predicate) {
+    return selectPreviousPackage(
+      [...this.packages.values()],
+      installId,
+      beforeWallClockMillis,
+      predicate,
+    );
   }
 
   listEventIds() {

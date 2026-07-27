@@ -69,16 +69,26 @@ function impliedSpeedKmh(distanceMeters, elapsedMillis) {
  *
  * `gpsTimeMillis` is intentionally NOT decisive here; see gpsTimeAdvisory().
  *
+ * Sub-check 1 is the only one that distinguishes a derived instant from a typed-in
+ * one, and `wallClockOffsetMillis` is NOT in the schema's `required` list. Omitting
+ * that one optional field therefore skips the only sub-check with real forensic
+ * force. Returning PASS in that case would let an attacker disable the strongest
+ * part of a DECISIVE check by deleting a field — so its absence yields UNAVAILABLE,
+ * which downgrades the verdict to `incomplete` rather than lifting it to `verified`.
+ *
  * @param {object} metadata      the package's signed metadata block
  * @param {number} nowMillis     the verifier's wall clock
  * @param {string[]} notes       appended to, explaining any failure
- * @returns {string} PASS | FAIL
+ * @returns {string} PASS | FAIL | UNAVAILABLE
  */
 function checkTimestampPlausible(metadata, nowMillis, notes) {
   const ts = metadata.timestamp;
 
-  // 1. The exact derivation identity, when the offset was recorded.
-  if (ts.wallClockOffsetMillis !== null && ts.wallClockOffsetMillis !== undefined) {
+  // 1. The exact derivation identity. Absence is recorded and carried to the end
+  //    rather than returned early: a package missing the offset may still be
+  //    provably impossible on sub-checks 2 and 3, and FAIL outranks UNAVAILABLE.
+  const hasOffset = ts.wallClockOffsetMillis !== null && ts.wallClockOffsetMillis !== undefined;
+  if (hasOffset) {
     const derived =
       Math.floor(ts.elapsedRealtimeNanos / MILLIS_PER_NANO_DIVISOR) + ts.wallClockOffsetMillis;
     if (derived !== ts.wallClockMillis) {
@@ -111,6 +121,14 @@ function checkTimestampPlausible(metadata, nowMillis, notes) {
         `${config.plausibility.maxFutureSkewMillis} ms skew allowance`,
     );
     return FAIL;
+  }
+
+  if (!hasOffset) {
+    notes.push(
+      'wallClockOffsetMillis is absent, so the recorded instant could not be confirmed as ' +
+        'derived from the monotonic clock; the remaining timestamp checks passed',
+    );
+    return UNAVAILABLE;
   }
 
   return PASS;

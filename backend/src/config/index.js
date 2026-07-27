@@ -67,7 +67,12 @@ const config = {
     // not attest still verifies (ADR-0006 §5) — so hardware backing is reported
     // by `attestationPresent`/`attestationKeyBinding`, not asserted blanket.
     'Proves the media and metadata are unaltered since capture and were signed by one specific key held in the capturing device keystore.',
-    'Hardware backing of that key is established only when the attestation checks pass.',
+    // Was: "Hardware backing of that key is established only when the attestation
+    // checks pass." That overstated it. The chain is never anchored to a Google
+    // root (see ADR-0004's implementation-status correction), so passing checks
+    // show the chain is self-consistent and covers the signing key — which a
+    // self-issued chain also achieves. Reported via `attestationRootTrusted`.
+    'Does NOT establish that the signing key is hardware-backed: the attestation chain is not checked against Google’s published roots.',
     'Does NOT prove the depicted event was real, unstaged, or correctly described.',
     'Not a standalone legal certificate; BSA 2023 s.63 requires human certification.',
   ],

@@ -100,12 +100,17 @@ class FilesystemPackageStore {
     return fs.readFileSync(file);
   }
 
-  findPreviousPackage(installId, beforeWallClockMillis) {
+  findPreviousPackage(installId, beforeWallClockMillis, predicate) {
     // A full scan. Acceptable at coursework scale and honest about it: an index
     // would be mutable state that could disagree with the objects on disk, and
     // the correctness of the location cross-check matters more here than its
     // cost. Revisit if the store ever grows past a few thousand events.
-    return selectPreviousPackage(this._allPackages(), installId, beforeWallClockMillis);
+    return selectPreviousPackage(
+      this._allPackages(),
+      installId,
+      beforeWallClockMillis,
+      predicate,
+    );
   }
 
   listEventIds() {

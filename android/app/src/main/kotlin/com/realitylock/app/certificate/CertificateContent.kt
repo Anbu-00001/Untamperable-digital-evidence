@@ -23,6 +23,13 @@ data class CertificateContent(
     val verdictLabel: String,
     /** Label/outcome pairs, in the spec's check order. */
     val checkRows: List<Pair<String, String>>,
+    /**
+     * Printed in place of the check table when [checkRows] is empty, so an absent
+     * breakdown is stated rather than left as a gap under the verdict heading.
+     * Carried as content, not a literal in the renderer, because it is user-facing
+     * prose and belongs with the rest of the translatable text.
+     */
+    val checksAbsentNotice: String,
     val advisories: List<String>,
     /**
      * What this document does and does not establish. Non-empty by construction —
@@ -61,12 +68,30 @@ data class CertificateContent(
          * coordinate is in the proof package for a verifier who needs it; a printed
          * page that may be shared, filed or photographed does not need to pin
          * someone's position to the metre.
+         *
+         * ## Why the verdict arrives as a labeller rather than a string
+         *
+         * This function previously took a pre-resolved `verdictLabel: String`
+         * alongside [report], with nothing tying the two together. The caller
+         * resolved it once from whichever report happened to be on screen and
+         * reused it for every event, so exporting a certificate for a *different,
+         * never-verified* event printed the other event's verdict — a bold
+         * "VERIFIED" heading above no check table at all, which is the single most
+         * misleading document this system could emit.
+         *
+         * Taking a labeller instead makes that unrepresentable: the verdict and the
+         * check rows are now both derived from [report] here, so they cannot
+         * disagree, and a caller has no way to supply a verdict that did not come
+         * from the report being printed. [notVerifiedLabel] covers the genuinely
+         * unverified case, which is a real state and not an error.
          */
         fun from(
             event: CapturedEvent,
             report: VerificationReport?,
             title: String,
-            verdictLabel: String,
+            verdictLabeller: (VerificationReport.Verdict) -> String,
+            notVerifiedLabel: String,
+            checksAbsentNotice: String,
             framing: List<String>,
             verificationUrl: String,
             generatedAtIso: String,
@@ -97,9 +122,13 @@ data class CertificateContent(
                     val mock = if (location.isMock) " — REPORTED AS MOCK" else ""
                     "$lat, $lon (±${location.accuracyMeters.toInt()} m)$mock"
                 },
-                verdictLabel = verdictLabel,
+                // Both of the next two lines read from the same `report`. That is the
+                // invariant: a verdict is printed only when the evidence for it is
+                // printed alongside.
+                verdictLabel = report?.let { verdictLabeller(it.verdict) } ?: notVerifiedLabel,
                 checkRows = report?.checks?.map { checkLabeller(it.name) to it.outcome.name }
                     ?: emptyList(),
+                checksAbsentNotice = checksAbsentNotice,
                 advisories = report?.advisories.orEmpty(),
                 framing = framing,
                 verificationUrl = verificationUrl,

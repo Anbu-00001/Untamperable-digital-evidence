@@ -28,7 +28,14 @@ class CertificateContentTest {
         event = event,
         report = report,
         title = "Reality Lock — Event Proof Certificate",
-        verdictLabel = "VERIFIED",
+        // The labeller is applied only to a verdict that came from `report`, so
+        // whatever it returns is traceable to the report under test. The previous
+        // helper passed a fixed `verdictLabel = "VERIFIED"` for every case, which
+        // is why the suite could not catch a certificate printing a verdict it had
+        // no report for.
+        verdictLabeller = { it.name },
+        notVerifiedLabel = NOT_VERIFIED,
+        checksAbsentNotice = CHECKS_ABSENT,
         framing = framing,
         verificationUrl = "https://example.org/verify/$EVENT_ID",
         generatedAtIso = "2026-07-25T10:00:00Z",
@@ -124,7 +131,46 @@ class CertificateContentTest {
         assertTrue(c.advisories.isEmpty())
     }
 
+    @Test
+    fun `an unverified event prints no verdict, only that it was not verified`() {
+        // The regression this pins. The verdict label used to be resolved by the
+        // composable from whichever report was on screen — a scope outside the
+        // per-event list — and reused for every row. Verify event A, then export a
+        // certificate for never-verified event B, and B's page carried A's
+        // "VERIFIED" as a bold heading above an empty check table: a positive
+        // authenticity claim with no evidence, for an event nobody had checked.
+        val c = content(report = null)
+
+        assertEquals(NOT_VERIFIED, c.verdictLabel)
+        assertTrue("a verdict must never be printed without its breakdown", c.checkRows.isEmpty())
+        assertEquals(CHECKS_ABSENT, c.checksAbsentNotice)
+    }
+
+    @Test
+    fun `the verdict printed is always the verdict of the report supplied`() {
+        // The other half: when a report IS present, the label tracks it rather than
+        // whatever the caller felt like passing. `from` derives both the label and
+        // the check rows from the same report, so they cannot disagree.
+        VerificationReport.Verdict.entries.forEach { verdict ->
+            val c = content(report = reportWith(verdict))
+            assertEquals(verdict.name, c.verdictLabel)
+            assertTrue(c.checkRows.isNotEmpty())
+        }
+    }
+
+    private fun reportWith(verdict: VerificationReport.Verdict) = VerificationReport(
+        verdict = verdict,
+        checks = listOf(
+            VerificationReport.Check("mediaHashMatch", VerificationReport.Outcome.PASS),
+        ),
+        notes = emptyList(),
+        advisories = emptyList(),
+        limitations = emptyList(),
+    )
+
     private companion object {
         const val EVENT_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+        const val NOT_VERIFIED = "NOT VERIFIED"
+        const val CHECKS_ABSENT = "no breakdown to print"
     }
 }

@@ -27,6 +27,25 @@ and ships the resulting certificate chain in
 `signature.attestationCertificateChain`. The backend verifies that chain against
 Google's published attestation roots.
 
+> **Implementation status correction (2026-07-27) — the sentence above describes
+> the decision, not the shipped code.**
+>
+> `backend/src/services/proofVerifier.js` verifies only that each certificate is
+> signed by the next (`attestationChainValid`) and that the leaf's public key is
+> the key that signed the package (`attestationKeyBinding`). **No root anchoring
+> is implemented, and no root set is fetched or consulted anywhere in the
+> service.** The one root match recorded in the probe below was performed by hand
+> during Phase 3; it is evidence about a device, not a code path.
+>
+> Consequence, stated plainly: a self-issued CA and leaf over an ordinary software
+> key produce a chain that links and binds correctly. Since 2026-07-27 the verifier
+> reports this honestly rather than silently — `attestationRootTrusted` is a named
+> check that is always `unavailable`, a one-certificate chain now `fail`s instead
+> of vacuously passing, and an advisory states that hardware backing is not
+> established. Closing the gap for real requires fetching Google's published roots
+> and parsing the attestation extension (OID `1.3.6.1.4.1.11129.2.1.17`) for
+> `securityLevel` and `verifiedBootState`. That work is not done.
+
 ## Rationale
 
 ### 1. It certifies the claim the proof package actually makes

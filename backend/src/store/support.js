@@ -60,15 +60,36 @@ function samePackage(a, b) {
  * Same install only: comparing positions recorded by two different devices says
  * nothing about whether either of them teleported.
  */
-function selectPreviousPackage(packages, installId, beforeWallClockMillis) {
+function selectPreviousPackage(packages, installId, beforeWallClockMillis, predicate) {
   let best = null;
   for (const pkg of packages) {
     if (!pkg || !pkg.metadata || pkg.metadata.device.installId !== installId) continue;
     const at = pkg.metadata.timestamp.wallClockMillis;
     if (at >= beforeWallClockMillis) continue;
+    if (predicate && !predicate(pkg)) continue;
     if (best === null || at > best.metadata.timestamp.wallClockMillis) best = pkg;
   }
   return best;
+}
+
+/**
+ * Predicate for the location cross-check: a usable predecessor is one that
+ * actually recorded a position.
+ *
+ * Without this, "most recent earlier event" and "most recent earlier event we can
+ * compare against" were the same query, and they are not the same question. An
+ * attacker could suppress the implied-speed check entirely by making one capture
+ * with location switched off immediately before the spoofed one — the verifier
+ * would pick that empty predecessor, report `locationPlausible: unavailable`, and
+ * advise that this "does not indicate a problem", while a perfectly comparable
+ * located capture sat one position further back in the history.
+ *
+ * Skipping to the older located event is sound: the elapsed wall-clock gap is an
+ * input to the implied-speed arithmetic, so a longer interval simply permits
+ * proportionally more travel.
+ */
+function hasLocation(pkg) {
+  return Boolean(pkg && pkg.metadata && pkg.metadata.location);
 }
 
 module.exports = {
@@ -77,4 +98,5 @@ module.exports = {
   stableStringify,
   samePackage,
   selectPreviousPackage,
+  hasLocation,
 };

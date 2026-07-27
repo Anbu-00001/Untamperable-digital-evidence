@@ -34,10 +34,19 @@ object IntegrityConfig {
      */
     const val MIN_DISTANCE_METERS_FOR_SPEED: Double = 50.0
 
-    /** Named checks that actually run, recorded in `integrity.location.mockDetectionChecks`. */
+    /**
+     * Named checks that actually run, recorded in `integrity.location.mockDetectionChecks`.
+     *
+     * Every name declared here must be reachable from [CaptureCoordinator]. A
+     * constant sitting under this comment unreferenced is a check the project
+     * claims and does not perform — which is the precise failure mode ADR-0005 §1
+     * exists to prevent. `CHECK_GNSS_CAPABILITY_PROBE` was removed on those
+     * grounds: `GnssCapabilityProbe` reports device capability for the diagnostics
+     * screen and takes no part in a capture's integrity record, which is why
+     * `gnssChecked` is written as false.
+     */
     const val CHECK_IS_MOCK: String = "location.isMock"
     const val CHECK_SPEED_PLAUSIBILITY: String = "speed_distance_plausibility"
-    const val CHECK_GNSS_CAPABILITY_PROBE: String = "gnss_raw_capability_probe"
 
     const val MILLIS_PER_HOUR: Double = 3_600_000.0
     const val METERS_PER_KM: Double = 1_000.0

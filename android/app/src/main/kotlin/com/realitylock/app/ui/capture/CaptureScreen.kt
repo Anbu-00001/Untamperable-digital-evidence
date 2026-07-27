@@ -322,8 +322,17 @@ private fun HistoryTab(
         stringResource(R.string.certificate_framing_4),
     )
     val certificateTitle = stringResource(R.string.certificate_title)
-    val verdictLabel = proofsState.report?.let { stringResource(it.verdict.uiLabelRes()) }
-        ?: stringResource(R.string.verify_verdict_unknown)
+
+    // Every verdict label is resolved up front, but NOT bound to a verdict here.
+    // Resolving `proofsState.report`'s label at this level was the bug: this scope
+    // is outside `items(events)`, so one event's verdict was reused for every row,
+    // and exporting a certificate for a never-verified event printed the previously
+    // verified event's result. Which label applies is now decided per event, from
+    // the report the ViewModel has already matched to that event.
+    val verdictLabels = VerificationReport.Verdict.entries
+        .associateWith { stringResource(it.uiLabelRes()) }
+    val notVerifiedLabel = stringResource(R.string.certificate_verdict_not_verified)
+    val checksAbsentNotice = stringResource(R.string.certificate_checks_absent)
 
     // The system "save as" dialog. Nothing is written to storage unless the user
     // chooses a destination — no storage permission is involved on any API level.
@@ -398,7 +407,9 @@ private fun HistoryTab(
                         proofsViewModel.buildCertificate(
                             eventId = event.eventId,
                             title = certificateTitle,
-                            verdictLabel = verdictLabel,
+                            verdictLabeller = { verdictLabels.getValue(it) },
+                            notVerifiedLabel = notVerifiedLabel,
+                            checksAbsentNotice = checksAbsentNotice,
                             framing = certificateFraming,
                             checkLabeller = { it },
                         )

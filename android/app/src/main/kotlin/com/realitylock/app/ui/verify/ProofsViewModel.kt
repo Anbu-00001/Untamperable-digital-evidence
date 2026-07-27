@@ -147,7 +147,9 @@ class ProofsViewModel(private val container: AppContainer) : ViewModel() {
     fun buildCertificate(
         eventId: String,
         title: String,
-        verdictLabel: String,
+        verdictLabeller: (VerificationReport.Verdict) -> String,
+        notVerifiedLabel: String,
+        checksAbsentNotice: String,
         framing: List<String>,
         checkLabeller: (String) -> String,
     ) {
@@ -162,10 +164,17 @@ class ProofsViewModel(private val container: AppContainer) : ViewModel() {
                         event = event,
                         // Whatever report is on screen for THIS event. A report for
                         // a different event must never be printed onto this one.
+                        // `CertificateContent.from` derives the verdict label from
+                        // this same guarded value, so the guard now covers the
+                        // verdict too — it previously covered only the check rows,
+                        // while the label came pre-resolved from the composable and
+                        // could belong to another event entirely.
                         report = _uiState.value.report
                             ?.takeIf { _uiState.value.reportEventId == eventId },
                         title = title,
-                        verdictLabel = verdictLabel,
+                        verdictLabeller = verdictLabeller,
+                        notVerifiedLabel = notVerifiedLabel,
+                        checksAbsentNotice = checksAbsentNotice,
                         framing = framing,
                         verificationUrl = container.verificationClient.verificationUrl(eventId),
                         generatedAtIso = ClockCorrelator.toIso8601Utc(System.currentTimeMillis()),

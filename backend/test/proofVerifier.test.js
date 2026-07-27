@@ -149,6 +149,57 @@ test('an unattested package does not claim hardware backing', () => {
   );
 });
 
+/**
+ * A self-signed EC certificate, subject "Not A Google Attestation Root".
+ * Anyone can mint one in two openssl commands, which is exactly the point: it is
+ * the cheapest possible forgery of an attestation chain.
+ */
+const SELF_SIGNED_CERT_B64 =
+  'MIIBpTCCAUugAwIBAgIUf+yqqhLQEbUatsvKSPWzqSjJq48wCgYIKoZIzj0EAwIwKDEmMCQGA1UEAwwd' +
+  'Tm90IEEgR29vZ2xlIEF0dGVzdGF0aW9uIFJvb3QwHhcNMjYwNzI3MDQ1MjE4WhcNMzYwNzI0MDQ1MjE4' +
+  'WjAoMSYwJAYDVQQDDB1Ob3QgQSBHb29nbGUgQXR0ZXN0YXRpb24gUm9vdDBZMBMGByqGSM49AgEGCCqG' +
+  'SM49AwEHA0IABPsGpkOewLJaNm2yM8Ko4+Iu9qGTwEJLjHinP4P8t+ATRE+3w7OJCwAN3CfprvzaUgWC' +
+  'MDk+Z3cUrpRIku0iM66jUzBRMB0GA1UdDgQWBBRUyLTYzuTdJ3NTPbXIRZk1tJ+oNDAfBgNVHSMEGDAW' +
+  'gBRUyLTYzuTdJ3NTPbXIRZk1tJ+oNDAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCIDuz' +
+  'iaS38MyovRtnTTiFdPx+l7gckhvM4v6U8V3ciQa5AiEAy7E/HXGUdeFOJx5U4W+JWGSmLV2g52kY0E2x' +
+  'qEt8VlA=';
+
+test('a single self-signed certificate cannot pass as an attestation chain', () => {
+  // The regression this pins: the linkage loop runs `chain.length - 1` times, so
+  // a one-element chain skipped it entirely and left `linked` at its initial
+  // `true` — reporting `attestationChainValid: pass` having verified nothing.
+  // The schema puts no `minItems` on the chain, so this package is well-formed.
+  const { pkg, media } = buildSignedPackage();
+  pkg.signature.attestationCertificateChain = [SELF_SIGNED_CERT_B64];
+
+  const { checks, notes } = verifyProofPackage(pkg, media, { nowMillis: NOW });
+
+  assert.strictEqual(checks.attestationChainValid, FAIL);
+  assert.ok(
+    notes.some((n) => n.includes('single certificate')),
+    'the reason must be stated, not just the verdict',
+  );
+});
+
+test('a present attestation chain never claims a trusted root', () => {
+  // No root set is consulted anywhere in this service, so `attestationRootTrusted`
+  // must never report `pass`. It exists as a named check precisely so the gap is
+  // visible in every report rather than buried in a comment: a chain that links
+  // and binds still proves nothing about its origin until it is anchored to a
+  // published Google root.
+  const { pkg, media } = buildSignedPackage();
+  pkg.signature.attestationCertificateChain = [SELF_SIGNED_CERT_B64];
+
+  const { checks, advisories } = verifyProofPackage(pkg, media, { nowMillis: NOW });
+
+  assert.strictEqual(checks.attestationPresent, PASS);
+  assert.strictEqual(checks.attestationRootTrusted, UNAVAILABLE);
+  assert.ok(
+    advisories.some((a) => a.includes('published attestation roots')),
+    'an unanchored chain must say so, or a reader will read it as hardware-backed',
+  );
+});
+
 // --- verdict semantics (ADR-0006 §5) ---------------------------------------
 
 test('a fully checkable genuine package is verified', () => {
@@ -213,12 +264,20 @@ test('a capture from the future fails, but ordinary clock skew does not', () => 
   assert.strictEqual(rejected.verdict, 'failed');
 });
 
-test('a package with no recorded offset still checks its iso8601 rendering', () => {
+test('a package with no recorded offset is incomplete, not passed', () => {
   // wallClockOffsetMillis is nullable in the schema, so the identity check must
   // be skipped rather than crash — while the other two sub-checks still apply.
+  //
+  // Skipping it must NOT yield `pass`. That sub-check is the only one that
+  // distinguishes an instant derived from the monotonic clock from one typed in
+  // by hand, so returning `pass` without it would let an attacker defeat the
+  // strongest part of a DECISIVE check by deleting an optional field. This
+  // asserts the module's own stated rule: a check that cannot be performed
+  // returns `unavailable`, never `pass`.
   const { pkg, media } = buildSignedPackage({ timestamp: { wallClockOffsetMillis: null } });
   const ok = verifyProofPackage(pkg, media, { nowMillis: NOW });
-  assert.strictEqual(ok.checks.timestampPlausible, PASS);
+  assert.strictEqual(ok.checks.timestampPlausible, UNAVAILABLE);
+  assert.strictEqual(ok.verdict, 'incomplete');
 
   const { pkg: bad, media: badMedia } = buildSignedPackage({
     timestamp: { wallClockOffsetMillis: null, iso8601: '1999-12-31T23:59:59.000Z' },

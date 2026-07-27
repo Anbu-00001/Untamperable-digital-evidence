@@ -94,13 +94,20 @@ class CertificateRenderer {
         y += CertificateConfig.SECTION_SPACING_POINTS
 
         // ---- per-check breakdown --------------------------------------------
-        if (content.checkRows.isNotEmpty()) {
-            y = drawSection(canvas, "Verification checks", left, y, heading)
+        // The section is drawn unconditionally. Silently omitting it when there are
+        // no rows left the "Verdict:" heading standing alone with nothing behind it,
+        // and a reader has no way to tell an omitted table from a system that simply
+        // has no checks to show. Saying so explicitly is the whole premise here:
+        // a verdict is only worth what its breakdown supports.
+        y = drawSection(canvas, "Verification checks", left, y, heading)
+        if (content.checkRows.isEmpty()) {
+            y = drawParagraph(canvas, content.checksAbsentNotice, left, y, contentWidth, muted)
+        } else {
             for ((label, outcome) in content.checkRows) {
                 y = drawKeyValue(canvas, label, outcome, left, y, contentWidth, body, body)
             }
-            y += CertificateConfig.SECTION_SPACING_POINTS
         }
+        y += CertificateConfig.SECTION_SPACING_POINTS
 
         // ---- advisories ------------------------------------------------------
         if (content.advisories.isNotEmpty()) {

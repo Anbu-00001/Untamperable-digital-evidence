@@ -34,12 +34,14 @@ class ForensicAnalyzer(context: Context) {
             ?: error("could not decode the selected image")
 
         // EXIF is read from a fresh stream (the decode stream is already consumed).
+        //
+        // A stream that will not open is an I/O failure, not a forensic finding.
+        // This previously fell back to a synthesised `NO_EXIF` report, which told
+        // the user "this image has no EXIF metadata" — an affirmative claim about
+        // the image — when the truth was that we never managed to look. It fails
+        // the same way the decode above does, for the same reason.
         val exifReport = resolver.openInputStream(uri)?.use(exif::analyze)
-            ?: ExifAnalyzer.ExifReport(
-                make = null, model = null, software = null, dateTimeOriginal = null,
-                hasExif = false,
-                findings = listOf(ExifAnalyzer.Finding(ExifAnalyzer.Finding.Code.NO_EXIF, triggered = true)),
-            )
+            ?: error("could not read the selected image to inspect its EXIF metadata")
 
         // ELA reads pixels from `source` (non-destructively) and builds its own
         // heat-map, so `source` survives to serve as the preview.

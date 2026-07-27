@@ -119,6 +119,14 @@
     <string name="verify_verdict_incomplete">INCOMPLETE</string>
     <string name="verify_verdict_invalid_format">NOT A VALID PROOF PACKAGE</string>
     <string name="verify_verdict_unknown">UNKNOWN</string>
+    <!--
+      For a certificate exported before the event was ever verified. Deliberately
+      NOT verify_verdict_unknown ("UNKNOWN"), whose body says the verifier returned
+      something unrecognised — that would describe a verification that happened and
+      confused us, rather than one that never ran.
+    -->
+    <string name="certificate_verdict_not_verified">NOT VERIFIED</string>
+    <string name="certificate_checks_absent">This event has not been verified against the verification service, so there is no per-check breakdown to print.</string>
     <string name="verify_verdict_verified_body">Every decisive check passed: the media and metadata are unaltered since capture and were signed by the key this package names.</string>
     <string name="verify_verdict_failed_body">At least one check failed. This package does not hold together — see the breakdown below for exactly which part.</string>
     <string name="verify_verdict_incomplete_body">Nothing failed, but a decisive check could not be run — most often because the backend does not have the media yet. Sync this event and verify again.</string>

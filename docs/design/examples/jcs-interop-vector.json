@@ -1,0 +1,39 @@
+{
+  "description": "RFC 8785 (JCS) cross-implementation golden vectors. The Android app canonicalizes metadata with io.github.erdtman:java-json-canonicalization; the backend verifier uses the canonicalize npm package. Both MUST produce byte-identical output or every signature fails verification. Both test suites read this one file, so neither side can drift alone. Coordinates here are synthetic.",
+  "producedBy": {
+    "java": "io.github.erdtman:java-json-canonicalization:1.1",
+    "node": "canonicalize@2.1.0"
+  },
+  "vectors": [
+    {
+      "name": "real-shaped-metadata",
+      "inputJson": "{\"timestamp\":{\"wallClockOffsetMillis\":1782952883734,\"wallClockMillis\":1785000579483,\"iso8601\":\"2026-07-25T17:29:39.483Z\",\"elapsedRealtimeNanos\":2047695749439852,\"gpsTimeMillis\":1785000572435},\"location\":{\"longitude\":80.14,\"latitude\":12.913,\"isMock\":false,\"provider\":\"fused\",\"accuracyMeters\":20,\"fixAgeMillis\":7047,\"altitudeMeters\":-58.70000076293945},\"motion\":{\"gyroscope\":[-0.07163749635219574,-0.042762499302625656,0.0015124999918043613],\"accelerometer\":[1.9309500455856323,6.166050434112549,7.086000442504883],\"sampleElapsedRealtimeNanos\":2047695746219911},\"device\":{\"sdkInt\":35,\"model\":\"CPH2591\",\"manufacturer\":\"OPPO\",\"installId\":\"00000000-0000-4000-8000-000000000000\",\"appVersionName\":\"0.1.0\",\"appVersionCode\":1}}",
+      "canonical": "{\"device\":{\"appVersionCode\":1,\"appVersionName\":\"0.1.0\",\"installId\":\"00000000-0000-4000-8000-000000000000\",\"manufacturer\":\"OPPO\",\"model\":\"CPH2591\",\"sdkInt\":35},\"location\":{\"accuracyMeters\":20,\"altitudeMeters\":-58.70000076293945,\"fixAgeMillis\":7047,\"isMock\":false,\"latitude\":12.913,\"longitude\":80.14,\"provider\":\"fused\"},\"motion\":{\"accelerometer\":[1.9309500455856323,6.166050434112549,7.086000442504883],\"gyroscope\":[-0.07163749635219574,-0.042762499302625656,0.0015124999918043613],\"sampleElapsedRealtimeNanos\":2047695746219911},\"timestamp\":{\"elapsedRealtimeNanos\":2047695749439852,\"gpsTimeMillis\":1785000572435,\"iso8601\":\"2026-07-25T17:29:39.483Z\",\"wallClockMillis\":1785000579483,\"wallClockOffsetMillis\":1782952883734}}",
+      "sha256": "52b7cfa5932a768c5af8563ce9889d857b98deb39d5eaa2fe26a2af337be61ad"
+    },
+    {
+      "name": "es6-number-edge-cases",
+      "inputJson": "[0, -0, 0.1, 1.0, -1.0, 100, 1e2, 1e21, 1e-7, 1e-6, 1e30, 5e-324, 1.7976931348623157e308, 9007199254740992, 9007199254740993, 0.3333333333333333, 123456789012345678901234567890]",
+      "canonical": "[0,0,0.1,1,-1,100,100,1e+21,1e-7,0.000001,1e+30,5e-324,1.7976931348623157e+308,9007199254740992,9007199254740992,0.3333333333333333,1.2345678901234568e+29]",
+      "sha256": "9efc02d82d9a61af396bf46efcb81b5a7457d75c33c683c5405367681fba92f2"
+    },
+    {
+      "name": "float-widened-to-double",
+      "inputJson": "[-58.70000076293945, 15.005999565124512, 0.00013749999925494194, 0.0015124999918043613]",
+      "canonical": "[-58.70000076293945,15.005999565124512,0.00013749999925494194,0.0015124999918043613]",
+      "sha256": "c3020617cde0cd292cab5b6b15df2a7cc1550dba546e18e1eda1b9b18cf9ef5c"
+    },
+    {
+      "name": "key-order-and-whitespace",
+      "inputJson": "{\n  \"b\" : 2,\n\t\"a\":1,\n  \"nested\" : { \"z\":[3,1,2], \"a\" : null }\n}",
+      "canonical": "{\"a\":1,\"b\":2,\"nested\":{\"a\":null,\"z\":[3,1,2]}}",
+      "sha256": "424571d8598c329c892146cf1b0683aac5058eb01f451190fa9983b6d1aa129b"
+    },
+    {
+      "name": "unicode-and-escapes",
+      "inputJson": "{\"emoji\":\"é€😀\",\"tab\":\"a\\tb\",\"quote\":\"q\\\"q\",\"solidus\":\"a/b\"}",
+      "canonical": "{\"emoji\":\"é€😀\",\"quote\":\"q\\\"q\",\"solidus\":\"a/b\",\"tab\":\"a\\tb\"}",
+      "sha256": "13eda622e47b1b0143b461a85df42f9a24c3035262524c4c2775d07167ca49a7"
+    }
+  ]
+}

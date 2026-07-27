@@ -185,7 +185,6 @@ class CaptureCoordinator(
         val previous = repository.list().firstOrNull { it.metadata.location != null }
         val prevLoc = previous?.metadata?.location
         if (prevLoc != null) {
-            checks.add(IntegrityConfig.CHECK_SPEED_PLAUSIBILITY)
             speedPlausible = LocationPlausibility.isPlausible(
                 prevLat = prevLoc.latitude,
                 prevLon = prevLoc.longitude,
@@ -194,6 +193,11 @@ class CaptureCoordinator(
                 lon = location.longitude,
                 wallClockMillis = wallClockMillis,
             )
+            // Named only once it produced an answer. `isPlausible` returns null
+            // when the two fixes are too close in time to judge, and listing the
+            // check anyway would claim a check ran that in fact declined to —
+            // exactly the invariant this field exists to express (ADR-0005 §1).
+            if (speedPlausible != null) checks.add(IntegrityConfig.CHECK_SPEED_PLAUSIBILITY)
         }
 
         return LocationIntegrityData(

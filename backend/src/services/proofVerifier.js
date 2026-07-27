@@ -59,12 +59,18 @@ function merkleRoot2Leaf(mediaHashHex, metadataHashHex) {
  * @param {number} [options.nowMillis]  the verifier's clock; injected so the
  *        timestamp check is testable without waiting for real time to pass.
  * @param {object|null} [options.previousPackage]  the most recent earlier
- *        package from the same install, for the location cross-check. Absent
- *        means "no history available", which yields `unavailable`, not a pass.
+ *        LOCATED package from the same install, for the location cross-check.
+ *        Absent means "no history available", which yields `unavailable`, not a
+ *        pass.
+ * @param {boolean} [options.historyReadFailed]  true when the store could not be
+ *        read at all. Kept distinct from "no history": one is a normal state, the
+ *        other is an infrastructure failure, and reporting them identically told
+ *        the reader a broken store "does not indicate a problem".
  */
 function verifyProofPackage(pkg, mediaBytes, options = {}) {
   const nowMillis = options.nowMillis !== undefined ? options.nowMillis : Date.now();
   const previousPackage = options.previousPackage || null;
+  const historyReadFailed = options.historyReadFailed === true;
   const checks = {};
   const notes = [];
   const advisories = [];
@@ -146,7 +152,7 @@ function verifyProofPackage(pkg, mediaBytes, options = {}) {
     notes,
   );
 
-  collectAdvisories(pkg, checks, advisories);
+  collectAdvisories(pkg, checks, advisories, historyReadFailed);
 
   return { checks, notes, advisories, verdict: verdictFor(checks) };
 }
@@ -156,11 +162,21 @@ function verifyProofPackage(pkg, mediaBytes, options = {}) {
  * package. Kept separate from `notes` (which explain check outcomes) because
  * these are standing caveats about what the package does and does not establish.
  */
-function collectAdvisories(pkg, checks, advisories) {
+function collectAdvisories(pkg, checks, advisories, historyReadFailed = false) {
   if (checks.attestationPresent === UNAVAILABLE) {
     advisories.push(
       'No key attestation chain: the signature proves the bundle is unaltered since ' +
         'capture, but not that the signing key lives in secure hardware.',
+    );
+  } else if (checks.attestationRootTrusted !== PASS) {
+    // A chain that links and binds still proves nothing about its origin until
+    // its top certificate is anchored to a published Google root. Saying so is
+    // the difference between "attested" and "carries something shaped like an
+    // attestation" — and an attacker can mint the latter freely.
+    advisories.push(
+      'The attestation chain is internally consistent and covers the signing key, but it ' +
+        'was NOT checked against Google’s published attestation roots. Hardware backing is ' +
+        'therefore not established: a self-issued chain would reach this same result.',
     );
   }
 
@@ -176,8 +192,12 @@ function collectAdvisories(pkg, checks, advisories) {
 
   if (checks.locationPlausible === UNAVAILABLE) {
     advisories.push(
-      'Location could not be cross-checked against an earlier capture — this does not ' +
-        'indicate a problem, only that no comparison was possible.',
+      historyReadFailed
+        ? 'Location could not be cross-checked because the stored capture history could ' +
+          'not be read. This is a failure of the verification service, NOT a statement ' +
+          'about this package — the cross-check was not attempted.'
+        : 'Location could not be cross-checked against an earlier capture — this does not ' +
+          'indicate a problem, only that no comparison was possible.',
     );
   }
 
@@ -204,9 +224,21 @@ function collectAdvisories(pkg, checks, advisories) {
  * signed this package. Without that last binding, any genuine chain could be
  * stapled onto a package signed by an entirely different key.
  *
- * Chaining to a Google root is checked separately by the caller, which supplies
- * the current root set; roots are fetched, never pinned, because Google rotated
- * them in 2026 and publishes more than one.
+ * ## What this does NOT establish
+ *
+ * Internal linkage plus key binding proves the chain is self-consistent and
+ * covers the signing key. It does NOT prove the chain came from Google, because
+ * nothing here anchors the top certificate to a published Google attestation
+ * root. An attacker can mint their own CA, issue a leaf over their own software
+ * key, and produce a chain that links perfectly and binds correctly.
+ *
+ * That gap is reported explicitly as `attestationRootTrusted: unavailable`
+ * rather than left implicit, so a reader is never told hardware backing was
+ * established when only self-consistency was. Implementing it means fetching
+ * Google's published roots (they rotated in 2026 and there is more than one, so
+ * they must be fetched rather than pinned) and verifying the top certificate
+ * against that set — plus parsing the attestation extension (OID
+ * 1.3.6.1.4.1.11129.2.1.17) for `securityLevel` and `verifiedBootState`.
  */
 function verifyAttestationChain(pkg, signingKeyDer, notes) {
   const chainBase64 = pkg.signature.attestationCertificateChain;
@@ -222,15 +254,32 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
       attestationPresent: UNAVAILABLE,
       attestationChainValid: UNAVAILABLE,
       attestationKeyBinding: UNAVAILABLE,
+      attestationRootTrusted: UNAVAILABLE,
     };
   }
 
-  const result = { attestationPresent: PASS };
+  // Never `pass`: no root set is consulted anywhere in this service. Declared as
+  // a real check so the limit is visible in every report instead of living in a
+  // comment (ADR-0005 §1 — a named check must be a check that ran).
+  const result = { attestationPresent: PASS, attestationRootTrusted: UNAVAILABLE };
   let chain;
   try {
     chain = chainBase64.map((b64) => new crypto.X509Certificate(Buffer.from(b64, 'base64')));
   } catch (err) {
     notes.push(`attestation chain could not be parsed: ${err.message}`);
+    return { ...result, attestationChainValid: FAIL, attestationKeyBinding: UNAVAILABLE };
+  }
+
+  // A lone certificate is not a chain. Guarding this explicitly matters: the
+  // linkage loop below runs `chain.length - 1` times, so a single self-signed
+  // certificate would skip it entirely and leave `linked` at its initial `true`
+  // — reporting `pass` having verified precisely nothing. The schema puts no
+  // `minItems` on the chain, so such a package is otherwise well-formed.
+  if (chain.length < 2) {
+    notes.push(
+      `attestation chain has only ${chain.length} certificate: a single certificate cannot ` +
+        'chain to an issuer, so it establishes no hardware backing',
+    );
     return { ...result, attestationChainValid: FAIL, attestationKeyBinding: UNAVAILABLE };
   }
 

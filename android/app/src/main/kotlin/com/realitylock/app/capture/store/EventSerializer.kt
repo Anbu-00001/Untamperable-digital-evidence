@@ -126,7 +126,14 @@ object EventSerializer {
         altitudeMeters = json.optDoubleOrNull(KEY_ALTITUDE_METERS),
         provider = json.optStringOrNull(KEY_PROVIDER),
         fixAgeMillis = json.optLongOrNull(KEY_FIX_AGE_MILLIS),
-        isMock = json.optBoolean(KEY_IS_MOCK, false),
+        // getBoolean, NOT optBoolean(..., false). `isMock` is required by the
+        // schema, and defaulting a missing one to `false` picks the benign answer
+        // for a security field: stripping one key from a sidecar would clear the
+        // mock warning — including the "REPORTED AS MOCK" line on an exported
+        // certificate — while everything else still looked normal. Throwing makes
+        // FileEventRepository.readEvent return null, so a doctored sidecar drops
+        // out of the list instead of being displayed as trustworthy.
+        isMock = json.getBoolean(KEY_IS_MOCK),
     )
 
     private fun timestampToJson(timestamp: TimestampData) = JSONObject().apply {
@@ -263,7 +270,9 @@ object EventSerializer {
         )
 
     private fun locationIntegrityFromJson(json: JSONObject) = LocationIntegrityData(
-        isMock = json.optBoolean(KEY_IS_MOCK, false),
+        // Strict for the same reason as the signed copy above: `false` is the
+        // benign answer, so it must never be reached by omission.
+        isMock = json.getBoolean(KEY_IS_MOCK),
         mockDetectionChecks = json.optJSONArray(KEY_MOCK_DETECTION_CHECKS)?.let { array ->
             (0 until array.length()).map(array::getString)
         }.orEmpty(),

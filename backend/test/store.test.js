@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 
 const { createStore, ConflictError, isSafeEventId } = require('../src/store');
-const { selectPreviousPackage } = require('../src/store/support');
+const { selectPreviousPackage, hasLocation } = require('../src/store/support');
 
 /**
  * Every behavioural test runs against BOTH drivers. A memory store that were
@@ -27,12 +27,12 @@ function eachDriver(name, body) {
 }
 
 /** Minimal package shaped enough for the store (the routes validate the schema). */
-function pkgFixture(eventId, { installId = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', wallClockMillis = 1000, sha256 = 'a'.repeat(64) } = {}) {
+function pkgFixture(eventId, { installId = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', wallClockMillis = 1000, sha256 = 'a'.repeat(64), location = null } = {}) {
   return {
     eventId,
     media: { mimeType: 'image/jpeg', byteLength: 3, sha256 },
     metadata: {
-      location: null,
+      location,
       timestamp: { wallClockMillis, iso8601: new Date(wallClockMillis).toISOString(), elapsedRealtimeNanos: 0 },
       motion: null,
       device: { installId, model: 'CPH2591', manufacturer: 'OnePlus', sdkInt: 35, appVersionName: '0.1.0', appVersionCode: 1 },
@@ -133,6 +133,35 @@ eachDriver('history from a different install is not comparable', (store) => {
     store.findPreviousPackage('aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', 5000),
     null,
   );
+});
+
+eachDriver('a predicate skips predecessors that cannot answer the question', (store) => {
+  // The attack this closes: the location cross-check compares against "the most
+  // recent earlier capture". If that capture has no location, the check reports
+  // `unavailable` — so making one capture with location switched off, immediately
+  // before a spoofed one, suppressed the implied-speed check entirely while a
+  // perfectly comparable located capture sat one position further back.
+  const located = { latitude: 13.0827, longitude: 80.2707, accuracyMeters: 5, isMock: false };
+  store.putPackage(pkgFixture(ID_A, { wallClockMillis: 1000, location: located }));
+  store.putPackage(pkgFixture(ID_B, { wallClockMillis: 2000, location: null }));
+
+  const install = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
+
+  // Unfiltered, the nearest predecessor is the location-less one.
+  assert.strictEqual(store.findPreviousPackage(install, 3000).eventId, ID_B);
+
+  // Filtered, the scan skips past it to the most recent one that CAN be compared.
+  // A longer interval is not a problem: elapsed time is an input to the
+  // implied-speed arithmetic, so a bigger gap simply permits more travel.
+  assert.strictEqual(store.findPreviousPackage(install, 3000, hasLocation).eventId, ID_A);
+});
+
+test('hasLocation treats malformed records as not comparable', () => {
+  assert.strictEqual(hasLocation(null), false);
+  assert.strictEqual(hasLocation({}), false);
+  assert.strictEqual(hasLocation({ metadata: {} }), false);
+  assert.strictEqual(hasLocation({ metadata: { location: null } }), false);
+  assert.strictEqual(hasLocation({ metadata: { location: { latitude: 1 } } }), true);
 });
 
 test('selectPreviousPackage ignores malformed entries instead of throwing', () => {
