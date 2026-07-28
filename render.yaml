@@ -22,5 +22,10 @@ services:
       - key: NODE_ENV
         value: production
       # PORT is injected by Render; src/config reads it via envInt('PORT', 3000).
-      - key: CORS_ORIGIN
+      # Matches backend/src/config/index.js's actual env var name (`ALLOWED_ORIGINS`
+      # — see backend/.env.example). This was previously named CORS_ORIGIN here,
+      # which the code never reads: harmless today only because both "mean" the
+      # same default (*), but setting CORS_ORIGIN in the dashboard to restrict
+      # origins would have silently done nothing.
+      - key: ALLOWED_ORIGINS
         value: "*"
