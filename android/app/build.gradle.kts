@@ -11,17 +11,33 @@ plugins {
 
 // --------------------------------------------------------------------------
 // Config resolution — layered, no hardcoding:
-//   1. local.properties  (gitignored, per-developer / secret overrides)
-//   2. gradle.properties (committed dev defaults)
-//   3. a safe literal fallback (last resort only)
+//   1. -P on the command line (explicit, this invocation only)
+//   2. local.properties  (gitignored, per-developer / secret overrides)
+//   3. gradle.properties (committed dev defaults)
+//   4. a safe literal fallback (last resort only)
 // Feature code never sees these literals; it reads BuildConfig via AppConfig.
+//
+// Tier 1 reads `startParameter.projectProperties` rather than `findProperty`,
+// and the distinction is the whole point: `findProperty` also returns
+// gradle.properties values, so consulting it first would let a committed default
+// shadow a developer's local.properties — which is exactly why the original
+// ordering put local.properties first and had no -P tier at all.
+//
+// That omission was a real defect, not a style choice. `run_sync_e2e.sh` starts
+// the backend on a free port and passes `-PREALITYLOCK_BACKEND_BASE_URL` to point
+// the app at it; local.properties won, so the app always called whatever port was
+// written there. The run only ever passed when that port happened to match — the
+// dynamic-port support had never actually worked, and the failure surfaced as
+// "the capture did not sync", which reads as a broken sync engine rather than a
+// build-config override that was silently discarded.
 // --------------------------------------------------------------------------
 val localProperties = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
 fun cfg(key: String, fallback: String): String =
-    localProperties.getProperty(key)
+    gradle.startParameter.projectProperties[key]
+        ?: localProperties.getProperty(key)
         ?: (project.findProperty(key) as String?)
         ?: fallback
 
