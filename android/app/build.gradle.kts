@@ -41,6 +41,15 @@ fun cfg(key: String, fallback: String): String =
         ?: (project.findProperty(key) as String?)
         ?: fallback
 
+// Same precedence as [cfg], but with no literal fallback — for release-signing
+// secrets, where there is no safe default to fall back to. Returns null when
+// unset, so the caller can leave the release build genuinely unsigned rather
+// than silently substituting something (see `signingConfigs` below).
+fun cfgOrNull(key: String): String? =
+    gradle.startParameter.projectProperties[key]
+        ?: localProperties.getProperty(key)
+        ?: (project.findProperty(key) as String?)
+
 // Package identity, declared once. `namespace` (R-class package) and
 // `applicationId` (Play Store identity) are the same value today but remain
 // separately assignable, since they are allowed to diverge later.
@@ -52,6 +61,33 @@ val javaVersion = JavaVersion.toVersion(libs.versions.javaVersion.get())
 android {
     namespace = appPackage
     compileSdk = libs.versions.compileSdk.get().toInt()
+
+    signingConfigs {
+        // Deliberately not created at all unless every one of the four values
+        // below is present — a partially-configured signing config, or worse,
+        // a release build silently falling back to Android's default debug
+        // signing, would be exactly the kind of silent-wrong-behavior this
+        // project's own verifier logic refuses to allow itself elsewhere. If
+        // these are unset, `release` below simply has no signing config, and
+        // Android's own tooling refuses to install the result — a loud,
+        // honest failure instead of a quiet one.
+        //
+        // The four keys go in the developer's own gitignored local.properties,
+        // never in gradle.properties or committed anywhere — see
+        // local.properties.example.
+        val storeFilePath = cfgOrNull("REALITYLOCK_RELEASE_STORE_FILE")
+        val storePw = cfgOrNull("REALITYLOCK_RELEASE_STORE_PASSWORD")
+        val alias = cfgOrNull("REALITYLOCK_RELEASE_KEY_ALIAS")
+        val keyPw = cfgOrNull("REALITYLOCK_RELEASE_KEY_PASSWORD")
+        if (storeFilePath != null && storePw != null && alias != null && keyPw != null) {
+            create("release") {
+                storeFile = rootProject.file(storeFilePath)
+                storePassword = storePw
+                keyAlias = alias
+                keyPassword = keyPw
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = appPackage
@@ -80,12 +116,15 @@ android {
             isMinifyEnabled = false
         }
         release {
-            // Code shrinking/obfuscation is turned on during Phase 6 hardening.
+            // Code shrinking/obfuscation is turned on during Phase 6 hardening
+            // (a separate, deliberately-not-bundled change — R8 can break
+            // reflection-based code and needs its own verification pass).
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 

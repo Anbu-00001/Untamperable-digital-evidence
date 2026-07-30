@@ -19,3 +19,13 @@
 
 # Real Google Cloud project number for Play Integrity (see SETUP.md).
 # REALITYLOCK_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER=123456789012
+
+# --- Release signing (only needed to run ./gradlew assembleRelease) ---------
+# Generate the keystore yourself — see SETUP.md — and NEVER commit it or these
+# passwords. All four must be set together, or the release build type simply
+# has no signing config and assembleRelease fails loudly rather than falling
+# back to debug signing or producing something unsigned.
+# REALITYLOCK_RELEASE_STORE_FILE=release.keystore.jks
+# REALITYLOCK_RELEASE_STORE_PASSWORD=
+# REALITYLOCK_RELEASE_KEY_ALIAS=realitylock
+# REALITYLOCK_RELEASE_KEY_PASSWORD=
