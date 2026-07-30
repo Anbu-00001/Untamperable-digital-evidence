@@ -14,6 +14,28 @@ function envInt(name, fallback) {
   return n;
 }
 
+/**
+ * Number of reverse proxies between the public internet and this process.
+ *
+ * Deliberately a COUNT, and never Express's `trust proxy: true`. Under `true`,
+ * Express takes the LEFT-most `X-Forwarded-For` entry as the client address —
+ * and that entry is written by the caller, so anyone can rotate it per request
+ * and walk straight through an IP-based rate limiter. express-rate-limit refuses
+ * that configuration by name (ERR_ERL_PERMISSIVE_TRUST_PROXY). A hop count makes
+ * Express count in from the RIGHT instead, and only a real proxy can append
+ * there.
+ *
+ * `envInt` already rejects the dangerous spelling: `TRUST_PROXY_HOPS=true`
+ * parses to NaN and throws, rather than being coerced to Express's `true`.
+ */
+function envTrustProxyHops(name, fallback) {
+  const hops = envInt(name, fallback);
+  if (hops < 0) {
+    throw new Error(`Environment variable ${name} must be zero or more, got "${hops}"`);
+  }
+  return hops;
+}
+
 /** Parse a comma-separated list env var with a default. */
 function envList(name, fallback) {
   const raw = process.env[name];
@@ -46,6 +68,33 @@ const config = {
 
   // Upper bound on an incoming proof-package JSON body (default 2 MiB).
   maxJsonBytes: envInt('MAX_JSON_BYTES', 2 * 1024 * 1024),
+
+  // ------------------------------------------------------------------------
+  // Abuse limits (Phase 6 hardening).
+  //
+  // This service has no authentication — anyone who finds the URL can submit or
+  // verify — so per-IP rate limiting is the only control in front of it. That
+  // makes `trustProxyHops` load-bearing: too permissive and the limiter is
+  // trivially bypassed, too strict and every request looks like one client.
+  //
+  // Default 1: a single platform load balancer in front of the app, which is the
+  // usual PaaS shape (Render included). VERIFY IT against the actual deployment
+  // rather than trusting this default — if the hosting provider adds a hop, the
+  // limiter starts keying on the proxy instead of the caller.
+  // ------------------------------------------------------------------------
+  trustProxyHops: envTrustProxyHops('TRUST_PROXY_HOPS', 1),
+
+  rateLimit: {
+    windowMs: envInt('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+    // Applies to /proof and /verify.
+    limit: envInt('RATE_LIMIT_MAX', 100),
+    // /health gets its own, far looser bucket. It is NOT exempt — it lists the
+    // store on every call, so it is not free to serve — but the hosting
+    // platform's own checker polls it, and answering that with 429 would mark
+    // the service unhealthy and pull it out of rotation. The limit is set well
+    // above any plausible health-check cadence.
+    healthLimit: envInt('RATE_LIMIT_HEALTH_MAX', 600),
+  },
 
   // The proof-package schema is the single shared contract with the app. Read
   // from docs/ by default; overridable for tests/deployment layouts.

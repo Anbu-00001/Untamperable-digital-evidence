@@ -116,10 +116,12 @@ android {
             isMinifyEnabled = false
         }
         release {
-            // Code shrinking/obfuscation is turned on during Phase 6 hardening
-            // (a separate, deliberately-not-bundled change — R8 can break
-            // reflection-based code and needs its own verification pass).
-            isMinifyEnabled = false
+            // R8 shrinking/obfuscation, enabled in Phase 6. Anything it needed
+            // kept is in proguard-rules.pro with the reason it is there — the
+            // rules were derived from an actual build-and-run, not guessed at
+            // up front, so the file records real constraints rather than
+            // defensive copy-paste that would quietly disable shrinking.
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -143,6 +145,15 @@ android {
     sourceSets["main"].kotlin.srcDir("src/main/kotlin")
     sourceSets["test"].kotlin.srcDir("src/test/kotlin")
     sourceSets["androidTest"].kotlin.srcDir("src/androidTest/kotlin")
+
+    testOptions {
+        unitTests {
+            // Robolectric resolves resources/manifest through the merged build
+            // output; without this it starts and then fails on resource access,
+            // which reads as a test bug rather than a missing build flag.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 kotlin {
@@ -234,6 +245,7 @@ dependencies {
     // ---- Testing ----
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
     // Production uses Android's built-in org.json; android.jar's stub throws in
     // unit tests, so the real implementation is substituted on the test classpath.
     testImplementation(libs.org.json)
@@ -243,12 +255,18 @@ dependencies {
     // actual sockets, status codes and request bodies rather than a mocked
     // interface that would agree with whatever the client happened to send.
     testImplementation(libs.okhttp.mockwebserver)
-    // Robolectric is deferred to Phase 6, where the sensor/location tests that
-    // need a simulated Android framework are written. It drags in very large
-    // `android-all` artifacts, so keeping it off the test classpath until then
-    // keeps the unit-test feedback loop fast.
-    // testImplementation(libs.robolectric)
-    // testImplementation(libs.androidx.test.core)
+    // Robolectric (Phase 6). Enabled here for the framework-dependent paths that
+    // no pure-JVM test can reach: the collector's `registerListener` →
+    // `onSensorChanged` → buffer path, and — the reason that actually justifies
+    // the dependency — `LocationSource.isMockCompat()`'s pre-API-31 branch. That
+    // branch is a *security* check (mock-location detection) which the project's
+    // only test device, an API 35 phone, can never execute. Robolectric runs it
+    // at the minSdk it was written for.
+    //
+    // It does drag in large `android-all` artifacts, which is why it was kept off
+    // the classpath until there were tests that genuinely needed it.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     // GrantPermissionRule — the in-test permission grant. It matters here because

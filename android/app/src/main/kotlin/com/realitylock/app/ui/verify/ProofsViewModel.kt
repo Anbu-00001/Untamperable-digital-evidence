@@ -11,6 +11,7 @@ import com.realitylock.app.core.time.ClockCorrelator
 import com.realitylock.app.sync.SyncState
 import com.realitylock.app.verify.VerificationClient
 import com.realitylock.app.verify.VerificationReport
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,7 +58,16 @@ data class ProofsUiState(
  * and check labels as parameters) because a ViewModel has no `Context` with which
  * to resolve a string resource, and none of this text may be an inline literal.
  */
-class ProofsViewModel(private val container: AppContainer) : ViewModel() {
+class ProofsViewModel(
+    private val container: AppContainer,
+    /**
+     * Where the blocking work goes. Defaults to [Dispatchers.IO], so production
+     * behaviour is unchanged; tests substitute a deterministic dispatcher because
+     * a hardcoded `Dispatchers.IO` leaves them racing a real thread pool and
+     * forces sleeps or polling to observe a result.
+     */
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) : ViewModel() {
 
     private val repository = container.eventRepository
     private val syncStateStore = container.syncStateStore
@@ -71,7 +81,7 @@ class ProofsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun refreshSyncStates() {
         viewModelScope.launch {
-            val states = withContext(Dispatchers.IO) { syncStateStore.all() }
+            val states = withContext(ioDispatcher) { syncStateStore.all() }
             _uiState.update { it.copy(syncStates = states) }
         }
     }
@@ -91,7 +101,7 @@ class ProofsViewModel(private val container: AppContainer) : ViewModel() {
     /** Clears a FAILED stage so the event is attempted again, then requests a pass. */
     fun retrySync(eventId: String) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { container.proofSyncEngine.resetForRetry(eventId) }
+            withContext(ioDispatcher) { container.proofSyncEngine.resetForRetry(eventId) }
             refreshSyncStates()
             requestSync()
         }
@@ -111,7 +121,7 @@ class ProofsViewModel(private val container: AppContainer) : ViewModel() {
         }
 
         viewModelScope.launch {
-            val bytes = withContext(Dispatchers.IO) { repository.readPackageBytes(eventId) }
+            val bytes = withContext(ioDispatcher) { repository.readPackageBytes(eventId) }
             if (bytes == null) {
                 _uiState.update {
                     it.copy(verifyingEventId = null, verifyError = ERROR_PACKAGE_UNREADABLE)
@@ -119,7 +129,7 @@ class ProofsViewModel(private val container: AppContainer) : ViewModel() {
                 return@launch
             }
 
-            val result = withContext(Dispatchers.IO) { container.verificationClient.verify(bytes) }
+            val result = withContext(ioDispatcher) { container.verificationClient.verify(bytes) }
             _uiState.update {
                 when (result) {
                     is VerificationClient.Result.Ok ->
@@ -156,7 +166,7 @@ class ProofsViewModel(private val container: AppContainer) : ViewModel() {
         _uiState.update { it.copy(buildingCertificateFor = eventId, certificateError = null) }
 
         viewModelScope.launch {
-            val outcome = withContext(Dispatchers.IO) {
+            val outcome = withContext(ioDispatcher) {
                 runCatching {
                     val event = repository.findById(eventId)
                         ?: error(ERROR_EVENT_MISSING)

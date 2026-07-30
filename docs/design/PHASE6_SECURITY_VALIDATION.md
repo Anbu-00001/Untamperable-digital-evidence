@@ -154,10 +154,134 @@ hardware-backed keymaster, so it exercises exactly the "cannot attest" path.
 - **GPS accuracy vs `Location.getAccuracy()`** — needs outdoor captures at known
   points. Not yet done.
 
+---
+
+## Test coverage added in Phase 6
+
+Totals after this pass: **173 Android unit tests** and **83 backend tests**, all
+passing, none skipped.
+
+### Robolectric (newly enabled)
+
+Robolectric was deferred through Phases 1–5 because nothing yet needed a
+simulated framework. Two things did, and both were untestable without it:
+
+- **`SensorSnapshotCollector`'s framework path.** The existing test only covered
+  the static selection helpers and never constructed a collector, so
+  `registerListener` → `onSensorChanged` → rolling buffer → `snapshotNearest`,
+  the buffer eviction, and the accelerometer/gyroscope routing had no coverage at
+  all. Eight tests now cover that path.
+- **`LocationSource.isMockCompat()`'s pre-API-31 branch.** This is the finding
+  worth recording. Mock-location detection reads `isMock` from API 31 and the
+  deprecated `isFromMockProvider` below it, and the project's only test device is
+  an API 35 phone — so **the pre-31 branch had never executed anywhere**, on a
+  check whose result is sealed inside the signed Merkle root. It is now asserted
+  at API 28, 30, 31 and 35, in both directions (a flagged location is reported,
+  an unflagged one is not).
+
+Robolectric runs pinned to `sdk=35`, not the project's `targetSdk=36`: SDK 36's
+`android-all` requires Java 21 and this toolchain is Java 17. Raising the
+toolchain to satisfy a test runtime would change the compiler used for the
+shipped APK, so the test runtime was pinned instead. Recorded in
+`app/src/test/resources/robolectric.properties`.
+
+These tests substitute a plain `Application` rather than `RealityLockApplication`,
+which builds the whole DI graph — including a keystore open — in `onCreate()`.
+
+### ViewModel boundary (MockK)
+
+`ProofsViewModelTest` covers the verification and certificate flows against
+mocked collaborators. Its reason for existing is a **regression test for the
+certificate-verdict defect**: the verdict label was previously resolved in the
+composable and handed over already decided, so whichever report was on screen got
+stamped onto whatever event the user exported.
+
+That test was mutation-checked rather than merely observed to pass — deleting the
+`takeIf { reportEventId == eventId }` guard from `ProofsViewModel` makes exactly
+that one test fail, and no other. A positive control asserts the report *is* used
+when it does belong to the event, so a ViewModel hardwired to "not verified"
+could not satisfy the suite.
+
+`ProofsViewModel` gained an injected `ioDispatcher` (defaulting to
+`Dispatchers.IO`, so production behaviour is unchanged) because a hardcoded
+dispatcher leaves tests racing a real thread pool.
+
+---
+
+## Gaps closed in Phase 6
+
+Both items previously listed here as known gaps are now done.
+
+### Backend rate limiting — **closed**
+
+The service still has no authentication, so per-IP limiting is the only control
+in front of it. `/proof` and `/verify` share one bucket; `/health` has its own,
+far looser one — it is not exempt (it lists the store on every call) but
+answering the platform's health checker with 429 would mark the service unhealthy
+and cause the outage the hardening was meant to prevent.
+
+The security-critical part is `TRUST_PROXY_HOPS`, and it is a **count, never
+`true`**. Under Express's `trust proxy: true` the client address is taken from
+the left-most `X-Forwarded-For` entry — which the caller writes — so an attacker
+rotates it per request and the limiter stops meaning anything;
+express-rate-limit refuses that configuration by name
+(`ERR_ERL_PERMISSIVE_TRUST_PROXY`). A count makes Express read from the right,
+where only a real proxy can append. The config rejects `true` and negative values
+rather than coercing them, and tests assert both refusals.
+
+**Outstanding, and it matters:** the hop count is set to `1` on the reasoning
+that Render fronts the app with a single load balancer. That has not been
+confirmed against the live deployment. If it is wrong, the limiter either keys on
+a spoofable value (too high) or collapses every caller into one bucket (too low).
+Verify before relying on it.
+
+### R8 minification — **closed**
+
+`isMinifyEnabled = true`. The APK drops from 29 MB to **4.4 MB**.
+
+`proguard-rules.pro` is still empty, which is a result rather than an omission:
+this app has no reflective model binding (no Gson/Moshi/Retrofit converters, no
+Room, no Tink — proof packages are built field-by-field against `org.json`), and
+the three classes the framework instantiates by name are kept by AGP's manifest
+handling and androidx.work's consumer rules. All three were confirmed present and
+unrenamed in the release mapping.
+
+Because R8's dangerous failure mode here is not a crash but a **silently weaker
+proof package**, it was verified on real hardware rather than by inspection: a
+capture made by the minified build was pulled from the device and run through the
+backend's own verifier.
+
+```
+VERDICT: verified
+  mediaHashMatch pass · metadataHashMatch pass · merkleRootMatch pass
+  signatureValid pass · attestationPresent pass · attestationChainValid pass
+  attestationKeyBinding pass · timestampPlausible pass
+  attestationRootTrusted unavailable · locationPlausible unavailable
+```
+
+Field-for-field identical in shape to a pre-R8 baseline captured on the same
+device, same 4-certificate chain. `attestationRootTrusted: unavailable` is the
+pre-existing Google-root gap, not an R8 effect.
+
+Release stack traces are unreadable without the `mapping.txt` from the exact
+build that produced the APK; it is not committed, so archive it with any APK that
+is distributed.
+
 ## Known gaps, stated rather than hidden
 
-- The backend has **no authentication or rate limiting**. Anyone who can reach it
-  can submit or verify. Acceptable for a coursework deployment; it is Phase-6
-  hardening work and is not claimed to be solved.
-- `isMinifyEnabled = false` for release. Turning R8 on is Phase-6 work, and a
-  release build also blocks cleartext HTTP, so it requires the HTTPS deployment.
+- The backend has **no authentication**. Rate limiting (above) bounds abuse per
+  IP but does not establish who is calling. Anyone who can reach the service can
+  still submit or verify. Proof-of-possession auth using the per-install signing
+  key is the intended answer and is not built.
+- The `TRUST_PROXY_HOPS=1` assumption is unverified against the live Render
+  deployment (see above).
+- **Espresso/Compose UI smoke test not written.** The phase table asks for a
+  small number of critical-flow UI tests (capture button → result screen); the
+  instrumented suite currently covers permissions, mock location, forensics and
+  certificate rendering, but not that flow. `androidx.compose.ui.test.junit4` is
+  not yet on the classpath.
+- **Accuracy testing still not done** — unchanged from the section above. The
+  ELA/EXIF false-positive rate needs a labelled corpus, and GPS accuracy needs
+  outdoor captures at known points. No rate should be quoted until then.
+- Scenario 5's emulator half remains outstanding; the attempt this session failed
+  on host disk space, not on anything about the build.

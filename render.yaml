@@ -29,3 +29,26 @@ services:
       # origins would have silently done nothing.
       - key: ALLOWED_ORIGINS
         value: "*"
+      # Number of reverse proxies in front of the app. Render terminates TLS at
+      # its own load balancer and appends the caller to X-Forwarded-For, so the
+      # count is 1.
+      #
+      # This is a security setting, not a tuning knob. It must never be `true`:
+      # Express would then take the LEFT-most X-Forwarded-For entry as the client
+      # address, and that entry is written by the caller — so anyone could rotate
+      # it per request and walk through the rate limiter below. A count makes
+      # Express read from the right, where only a real proxy can append. The
+      # config refuses `true` and negative values outright.
+      #
+      # If a 429 never fires in production, or every caller shares one bucket,
+      # this number is wrong for the current Render topology — recheck it before
+      # assuming the limiter itself is broken.
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      # Per-IP allowance for /proof and /verify, which share a single bucket.
+      # /health is limited separately and far more loosely (see config), because
+      # 429-ing Render's own health check would take the service out of rotation.
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX
+        value: "100"
