@@ -274,4 +274,10 @@ dependencies {
     // this route did not work either, no instrumented test could ever exercise
     // the camera or location paths.
     androidTestImplementation(libs.androidx.test.rules)
+    // Compose UI tests (Phase 6). The BOM is applied to the androidTest classpath
+    // as well, so the test artifacts resolve to the same Compose version the app
+    // is built against rather than whatever the test library defaults to.
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

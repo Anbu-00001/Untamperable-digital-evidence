@@ -123,6 +123,13 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+# Compose UI testing (Phase 6). Versions come from the BOM above, like the rest
+# of Compose — a test artifact pinned to a different Compose version than the one
+# under test is a well-known source of NoSuchMethodError at run time.
+# ui-test-manifest supplies the empty Activity that createAndroidComposeRule
+# launches; it is a debug-only dependency and never reaches a release build.
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 
 # --- Coroutines ---
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }

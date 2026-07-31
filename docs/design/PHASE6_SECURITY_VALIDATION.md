@@ -212,7 +212,7 @@ dispatcher leaves tests racing a real thread pool.
 
 Both items previously listed here as known gaps are now done.
 
-### Backend rate limiting — **closed**
+### Backend rate limiting — **implemented, with a stated production limitation**
 
 The service still has no authentication, so per-IP limiting is the only control
 in front of it. `/proof` and `/verify` share one bucket; `/health` has its own,
@@ -229,11 +229,37 @@ express-rate-limit refuses that configuration by name
 where only a real proxy can append. The config rejects `true` and negative values
 rather than coercing them, and tests assert both refusals.
 
-**Outstanding, and it matters:** the hop count is set to `1` on the reasoning
-that Render fronts the app with a single load balancer. That has not been
-confirmed against the live deployment. If it is wrong, the limiter either keys on
-a spoofable value (too high) or collapses every caller into one bucket (too low).
-Verify before relying on it.
+#### What the live deployment actually showed
+
+The limiter was probed against the deployed service rather than assumed correct,
+and the result is worth recording because it is **not** a clean pass.
+
+Six requests carrying the *same* spoofed `X-Forwarded-For` returned
+`remaining = 597, 596, 595, 597, 596, 595` — the same triplet twice. A single
+coherent counter would have descended 597→592. The state is therefore not shared
+across requests.
+
+The cause is in this repo, not in Render: the limiter is constructed with no
+`store`, so it uses express-rate-limit's default **MemoryStore, which is
+per-process**. Consequences, stated plainly:
+
+- The effective allowance is roughly *configured limit × number of serving
+  processes*, not the configured limit.
+- On Render's free tier the service spins down when idle, and the counter is lost
+  entirely on every cold start.
+
+So rate limiting is **implemented, unit-tested and active** — the seven tests in
+`backend/test/rateLimit.test.js` are deterministic because they run one process —
+but it should be described as *raising the cost of abuse*, not as a dependable
+per-IP quota in production. Making it dependable needs a shared store (the
+library's Redis/Memcached stores exist for exactly this) or a guaranteed
+single-instance deployment.
+
+**Still unverified:** whether `TRUST_PROXY_HOPS=1` matches Render's real
+topology. The counter noise above masks the signal the spoofing test depends on —
+a fresh bucket per forged IP is indistinguishable from a different process
+answering — so the experiment could not settle it either way. Re-run it once the
+limiter has a shared store; until then treat the hop count as an assumption.
 
 ### R8 minification — **closed**
 
@@ -273,15 +299,38 @@ is distributed.
   IP but does not establish who is calling. Anyone who can reach the service can
   still submit or verify. Proof-of-possession auth using the per-install signing
   key is the intended answer and is not built.
-- The `TRUST_PROXY_HOPS=1` assumption is unverified against the live Render
-  deployment (see above).
-- **Espresso/Compose UI smoke test not written.** The phase table asks for a
-  small number of critical-flow UI tests (capture button → result screen); the
-  instrumented suite currently covers permissions, mock location, forensics and
-  certificate rendering, but not that flow. `androidx.compose.ui.test.junit4` is
-  not yet on the classpath.
-- **Accuracy testing still not done** — unchanged from the section above. The
-  ELA/EXIF false-positive rate needs a labelled corpus, and GPS accuracy needs
-  outdoor captures at known points. No rate should be quoted until then.
+- The rate limiter's per-process MemoryStore, and the unverified
+  `TRUST_PROXY_HOPS=1` assumption (both detailed above).
+- **The Compose UI smoke test has not been executed.**
+  `CaptureFlowInstrumentedTest` is written and **compiles**, and
+  `androidx.compose.ui.test.junit4` is on the androidTest classpath — but it has
+  never been run, because no device was attached when it was written and the
+  emulator could not start (host disk full, not a project fault). It must be run
+  before it is counted as passing; a test that has only ever compiled proves
+  nothing about the app.
+
+  What it covers: the four tabs render and navigate, and — the assertion with
+  real weight — the Analyze surface still displays its "triage aid, not a
+  verdict" banner, which research/04 §6 requires and whose loss would leave
+  ELA/EXIF output reading as a determination of authenticity. It deliberately
+  does not re-drive capture, which `scripts/e2e/run_e2e.sh` already exercises
+  end-to-end against real hardware.
+
+- **Accuracy testing still not done**, and one part of it needs restating.
+  GPS accuracy still needs outdoor captures at known points.
+
+  For ELA/EXIF, a *"false-positive rate"* is the wrong measure to chase as
+  written. `ExifRules` documents every flag as suggestive — "the metadata is
+  internally inconsistent or names an editor", explicitly **not** "the image was
+  manipulated" — so scoring it against untouched/edited labels would presuppose a
+  claim the design refuses to make, and publishing that number would overstate
+  the feature in exactly the way research/04 §6 forbids. A synthetic corpus makes
+  it worse, not better: generated images are not camera photographs, and a rate
+  measured on them would be precise and meaningless.
+
+  What would be legitimate is a *characterisation* on real photographs — how
+  often each rule fires on untouched camera output versus editor-processed
+  output, reported as rule behaviour rather than detector accuracy. That needs a
+  real labelled corpus, which the project does not have and must not fabricate.
 - Scenario 5's emulator half remains outstanding; the attempt this session failed
   on host disk space, not on anything about the build.
