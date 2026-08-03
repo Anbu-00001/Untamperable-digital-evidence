@@ -156,6 +156,96 @@ hardware-backed keymaster, so it exercises exactly the "cannot attest" path.
 
 ---
 
+## Instrumented suite, re-run on hardware (2026-08-03)
+
+**22 tests on the CPH2591 — 14 passed, 8 skipped for documented OEM limits, 0
+failed.** (Previously 18: 11 passed, 7 skipped. The four new ones are the Compose
+UI smoke test.)
+
+### The Compose UI smoke test now genuinely runs
+
+`CaptureFlowInstrumentedTest` — all four cases executed and passed on the device,
+with real execution times and no skip markers. It asserts the four tabs render
+and navigate, and — the case with actual weight — that the Analyze surface still
+displays its **"triage aid — not a verdict"** banner, which research/04 §6
+requires and whose loss would leave ELA/EXIF output reading as a determination of
+authenticity. It deliberately does not re-drive capture; `scripts/e2e/run_e2e.sh`
+already does that end-to-end.
+
+### Integration runs, same session
+
+Both end-to-end scripts were run against the device after the Phase-6 changes
+(Robolectric, R8, rate limiting) and the Phase-7 addition, to confirm none of them
+disturbed the working system.
+
+| Script | Result | Notable |
+|---|---|---|
+| `run_e2e.sh 2` | **11 passed, 0 failed** | 2 real captures driven through the UI; motion bound 2.63 ms and 216.89 ms from the shutter; **one flipped bit in the JPEG detected** (`verdict=failed`, `mediaHashMatch=fail`) |
+| `run_sync_e2e.sh` | **33 passed, 0 failed** | full sync → verify; rewriting a stored package refused (409); media not matching the signed digest refused (409); **`locationPlausible: pass`** — the cross-event check ran against real stored history; edited metadata detected; the public QR verdict discloses no coordinates |
+
+This makes scenarios 1 and 2 (tamper media / tamper metadata) proven against
+genuine device captures rather than fixtures, and `locationPlausible` exercised
+with real history rather than reported `unavailable`.
+
+#### A latent bug in `run_e2e.sh`, found and fixed by running it
+
+The first run died with
+`line 155: 0\n0: syntax error in expression (error token is "0")`.
+
+Cause: `... | grep -c '\.json' || echo 0`. `grep -c` prints `0` for an empty
+match **and** exits non-zero, so the `|| echo 0` fired as well and the command
+substitution returned the two-line string `"0\n0"`, which `$((AFTER - BEFORE))`
+cannot parse. It failed in precisely the situation it was written to survive — a
+device holding no captures.
+
+Replaced with a `count_event_sidecars` helper (`| tail -1`, plus `:-0` for adb
+failing outright). A pre-flight check was also added to step 4: if the camera
+permission is absent the run now stops there with instructions, instead of
+surfacing several steps later as "could not find the Capture event button", which
+reads like a UI regression rather than a device-policy problem.
+
+### A question this file left open is now answered, and the answer is "no"
+
+Section "Where each scenario runs" said `GrantPermissionRule` should work because
+it goes through `UiAutomation.grantRuntimePermission()` rather than the `pm`
+shell command, and noted honestly that `PermissionGrantInstrumentedTest` passing
+on a device where the permissions were **already granted** proved only that the
+rule did not interfere — not that it could grant from scratch. It proposed the
+emulator as the way to settle that.
+
+Uninstalling the app and running fresh settled it instead, and it settles it
+against us:
+
+```
+SecurityException: Error granting runtime permission
+  at android.app.UiAutomation.grantRuntimePermissionAsUser(UiAutomation.java:1574)
+```
+
+All four UI tests failed this way on a clean install. The `pm` route was
+re-confirmed blocked in the same session:
+
+```
+$ adb shell pm grant com.realitylock.app android.permission.CAMERA
+SecurityException: grantRuntimePermission: Neither user 2000 nor current
+process has android.permission.GRANT_RUNTIME_PERMISSIONS
+```
+
+So ColorOS refuses **both** routes, and the earlier hope that instrumentation was
+privileged where the shell is not does not hold on this device. The only way to
+hold these permissions here is a human tapping Allow.
+
+`CaptureFlowInstrumentedTest` was therefore changed to **skip with an explanatory
+message** when the camera permission is absent, rather than fail — the convention
+this file already applies to OEM limits, since a red failure would report a
+device policy as an application defect. On a prepared device (or any emulator)
+the tests run normally, which is how the passing run above was obtained.
+
+The practical consequence, worth stating for anyone reproducing this: **the
+instrumented suite cannot be run unattended from a clean install on this
+hardware.** Grant camera and location once by hand first.
+
+---
+
 ## Test coverage added in Phase 6
 
 Totals after this pass: **173 Android unit tests** and **83 backend tests**, all
@@ -301,20 +391,8 @@ is distributed.
   key is the intended answer and is not built.
 - The rate limiter's per-process MemoryStore, and the unverified
   `TRUST_PROXY_HOPS=1` assumption (both detailed above).
-- **The Compose UI smoke test has not been executed.**
-  `CaptureFlowInstrumentedTest` is written and **compiles**, and
-  `androidx.compose.ui.test.junit4` is on the androidTest classpath — but it has
-  never been run, because no device was attached when it was written and the
-  emulator could not start (host disk full, not a project fault). It must be run
-  before it is counted as passing; a test that has only ever compiled proves
-  nothing about the app.
-
-  What it covers: the four tabs render and navigate, and — the assertion with
-  real weight — the Analyze surface still displays its "triage aid, not a
-  verdict" banner, which research/04 §6 requires and whose loss would leave
-  ELA/EXIF output reading as a determination of authenticity. It deliberately
-  does not re-drive capture, which `scripts/e2e/run_e2e.sh` already exercises
-  end-to-end against real hardware.
+*(The Compose UI smoke test has since been executed — see "Instrumented suite,
+re-run on hardware" below.)*
 
 - **Accuracy testing still not done**, and one part of it needs restating.
   GPS accuracy still needs outdoor captures at known points.

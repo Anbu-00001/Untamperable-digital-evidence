@@ -33,9 +33,31 @@ WORK="$(mktemp -d)"
 BACKEND_PID=""
 
 PASS=0; FAIL=0
+# Set when a precondition makes driving the UI impossible (see step 4). Declared
+# here because the script runs under `set -u`, where a conditional assignment
+# deeper in the flow would leave it unbound on the happy path.
+SKIP_CAPTURES=0
 ok()   { echo "  PASS  $1"; PASS=$((PASS+1)); }
 bad()  { echo "  FAIL  $1"; FAIL=$((FAIL+1)); }
 step() { echo; echo "=== $1 ==="; }
+
+# How many event sidecars the app currently holds.
+#
+# `grep -c` already prints a count for an empty stream, and it *also* exits 1 when
+# that count is zero. The earlier `... | grep -c '\.json' || echo 0` therefore
+# emitted BOTH the grep's "0" and the fallback "0", so the caller received the two-
+# line string "0\n0" and `$((AFTER - BEFORE))` died with
+# `syntax error in expression (error token is "0")`. It broke in exactly the case
+# it was added to survive: no captures on the device.
+#
+# `tail -1` keeps the last line whatever happens, and the `:-0` covers adb failing
+# outright and printing nothing at all.
+count_event_sidecars() {
+  local n
+  n="$(adb -s "$DEVICE" shell run-as "$PKG" ls "files/$CAPTURES_SUBDIR/" 2>/dev/null \
+    | tr -d '\r' | grep -c '\.json$' | tail -1)"
+  echo "${n:-0}"
+}
 
 cleanup() {
   [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null
@@ -114,6 +136,24 @@ else
     (cd android && ./gradlew --quiet :app:assembleDebug >>"$WORK/unit.log" 2>&1)
     if adb -s "$DEVICE" install -r "$APK" >/dev/null 2>&1; then ok "APK installed"; else bad "APK install failed"; fi
 
+    # Fail fast, and say what to do about it.
+    #
+    # Without the camera permission the app opens on its rationale screen, the
+    # shutter never renders, and the run dies several steps later as "could not
+    # find the 'Capture event' button" — which reads like a UI regression. It is
+    # not: on this project's ColorOS target BOTH grant routes are refused
+    # (`adb shell pm grant` → no GRANT_RUNTIME_PERMISSIONS;
+    # `UiAutomation.grantRuntimePermission` → SecurityException, see
+    # docs/design/PHASE6_SECURITY_VALIDATION.md), and a reinstall clears the
+    # grant — which the install above has very likely just done.
+    if ! adb -s "$DEVICE" shell dumpsys package "$PKG" | grep -q "android.permission.CAMERA: granted=true"; then
+      bad "CAMERA is not granted to $PKG — no capture can be driven.
+        This device refuses to grant it from adb or from instrumentation, so it has
+        to be done by hand: open Reality Lock, allow camera (and location), re-run.
+        Note that reinstalling the APK clears the grant again."
+      SKIP_CAPTURES=1
+    fi
+
     # ------------------------------------------------------------------
     step "5. Driving $CAPTURES captures on the device"
     adb -s "$DEVICE" shell am force-stop "$PKG"
@@ -141,17 +181,18 @@ for m in re.finditer(r'text=\"([^\"]*)\"[^>]*?bounds=\"\[(\d+),(\d+)\]\[(\d+),(\
       adb -s "$DEVICE" shell input tap $coords
     }
 
-    BEFORE_COUNT="$(adb -s "$DEVICE" shell run-as "$PKG" ls files/$CAPTURES_SUBDIR/ 2>/dev/null | grep -c '\.json' || echo 0)"
+    BEFORE_COUNT="$(count_event_sidecars)"
     for i in $(seq 1 "$CAPTURES"); do
+      [ "$SKIP_CAPTURES" -eq 1 ] && break
       if tap_by_text "$SHUTTER_LABEL"; then
         echo "  capture $i triggered"
       else
-        bad "could not find the 'Capture event' button (permissions granted?)"
+        bad "could not find the '$SHUTTER_LABEL' button on screen"
         break
       fi
       sleep 6
     done
-    AFTER_COUNT="$(adb -s "$DEVICE" shell run-as "$PKG" ls files/$CAPTURES_SUBDIR/ 2>/dev/null | grep -c '\.json' || echo 0)"
+    AFTER_COUNT="$(count_event_sidecars)"
     NEW=$((AFTER_COUNT - BEFORE_COUNT))
     if [ "$NEW" -ge 1 ]; then ok "$NEW new event(s) recorded on device"; else bad "no new events recorded"; fi
 

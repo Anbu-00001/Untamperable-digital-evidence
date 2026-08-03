@@ -1,14 +1,17 @@
 package com.realitylock.app.ui
 
 import android.Manifest
+import android.content.pm.PackageManager
 import androidx.annotation.StringRes
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.rule.GrantPermissionRule
+import androidx.test.platform.app.InstrumentationRegistry
 import com.realitylock.app.R
+import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,19 +35,49 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class CaptureFlowInstrumentedTest {
 
-    // Granted before the activity launches, so the app opens on the capture
-    // surface rather than the permission rationale. `GrantPermissionRule` is used
-    // rather than `adb shell pm grant`, which this project's target device
-    // refuses outright — see PermissionGrantInstrumentedTest.
-    @get:Rule(order = 0)
-    val permissions: GrantPermissionRule = GrantPermissionRule.grant(
-        Manifest.permission.CAMERA,
-        Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-    )
-
-    @get:Rule(order = 1)
+    @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
+
+    /**
+     * These tests need the camera permission already held, and on this project's
+     * target device that cannot be arranged from here.
+     *
+     * `GrantPermissionRule` was used originally, on the strength of
+     * `PermissionGrantInstrumentedTest` passing. That reading was wrong, and the
+     * Phase-6 notes had flagged the risk: that test passed on a device where the
+     * permissions were *already granted*, which only proved the rule did not
+     * interfere — not that it could grant from scratch. Installing fresh and
+     * running showed the difference immediately:
+     *
+     * ```
+     * SecurityException: Error granting runtime permission
+     *   at android.app.UiAutomation.grantRuntimePermissionAsUser
+     * ```
+     *
+     * So ColorOS refuses **both** routes — `adb shell pm grant` fails with
+     * `Neither user 2000 nor current process has GRANT_RUNTIME_PERMISSIONS`, and
+     * the instrumentation route fails as above. The only way to hold these
+     * permissions on this hardware is for a human to tap Allow.
+     *
+     * The suite therefore *skips* rather than fails, which is this project's
+     * existing convention for an OEM limit (see
+     * `PermissionRevokeGrantInstrumentedTest`): a red failure here would report a
+     * device policy as a defect in the app. The skip message says exactly what to
+     * do, so the tests run on a prepared device and on any emulator.
+     */
+    @Before
+    fun requireCameraPermissionAlreadyGranted() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val held = context.checkSelfPermission(Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+
+        assumeTrue(
+            "SKIPPED: CAMERA is not granted, and this device refuses to grant it from " +
+                "either adb or instrumentation. Open Reality Lock once and allow camera " +
+                "access, then re-run.",
+            held,
+        )
+    }
 
     private fun string(@StringRes id: Int, vararg args: Any): String =
         compose.activity.getString(id, *args)
