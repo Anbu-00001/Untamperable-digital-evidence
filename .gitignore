@@ -1,5 +1,7 @@
 # Claude configuration directory
 .claude/
+.serena/
+
 
 # IDE / System files
 .DS_Store
