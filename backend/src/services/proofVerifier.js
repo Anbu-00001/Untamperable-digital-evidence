@@ -6,6 +6,7 @@ const config = require('../config');
 const { sha256Hex } = require('./hashService');
 const plausibility = require('./plausibility');
 const { isAnchoredToPinnedRoot } = require('./attestationRoots');
+const revocation = require('./attestationRevocation');
 
 /**
  * Cryptographic verification of a proof package (research/02 §8 Step 10).
@@ -190,6 +191,16 @@ function collectAdvisories(pkg, checks, advisories, historyReadFailed = false) {
     );
   }
 
+  if (checks.attestationNotRevoked === UNAVAILABLE && checks.attestationPresent === PASS) {
+    // Said out loud because this check fails OPEN: with no list, a revoked
+    // certificate looks exactly like a clean one. A reader who is not told the
+    // check did not run will reasonably assume it passed.
+    advisories.push(
+      'Certificate revocation was NOT checked against Google’s published status list, so a ' +
+        'key revoked for compromise would not be detected in this report.',
+    );
+  }
+
   if (pkg.metadata.location && pkg.metadata.location.isMock === true) {
     // Signed by the device, so this is the device itself reporting that the
     // position came from a mock provider. Not a tampering finding — a
@@ -268,6 +279,42 @@ function collectAdvisories(pkg, checks, advisories, historyReadFailed = false) {
  *   parsed, so `securityLevel` (TrustedEnvironment vs StrongBox) and
  *   `verifiedBootState` are not checked against expectations.
  */
+/**
+ * Is any certificate in [chain] on Google's revocation list?
+ *
+ * Returns `unavailable` — never `pass` — when no usable snapshot exists. This is
+ * the one check that fails open by nature: with no list, a revoked certificate
+ * is indistinguishable from a clean one, so answering `pass` would report a
+ * key Google says is compromised as fine because a network fetch had not
+ * happened yet.
+ */
+function evaluateRevocation(chain, notes) {
+  const revoked = [];
+  for (const cert of chain) {
+    let entry;
+    try {
+      entry = revocation.lookup(cert.serialNumber);
+    } catch (err) {
+      notes.push(
+        `revocation not checked (${err.message}) — a revoked certificate would not be ` +
+          'detected in this report',
+      );
+      return UNAVAILABLE;
+    }
+    if (entry) {
+      revoked.push(
+        `${cert.subject.replace(/\n/g, ' ')} [${entry.status}${entry.reason ? `: ${entry.reason}` : ''}]`,
+      );
+    }
+  }
+
+  if (revoked.length > 0) {
+    notes.push(`certificate revoked by Google: ${revoked.join('; ')}`);
+    return FAIL;
+  }
+  return PASS;
+}
+
 function verifyAttestationChain(pkg, signingKeyDer, notes) {
   const chainBase64 = pkg.signature.attestationCertificateChain;
   if (!chainBase64 || chainBase64.length === 0) {
@@ -283,6 +330,7 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
       attestationChainValid: UNAVAILABLE,
       attestationKeyBinding: UNAVAILABLE,
       attestationRootTrusted: UNAVAILABLE,
+      attestationNotRevoked: UNAVAILABLE,
     };
   }
 
@@ -292,7 +340,12 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
     chain = chainBase64.map((b64) => new crypto.X509Certificate(Buffer.from(b64, 'base64')));
   } catch (err) {
     notes.push(`attestation chain could not be parsed: ${err.message}`);
-    return { ...result, attestationChainValid: FAIL, attestationKeyBinding: UNAVAILABLE };
+    return {
+      ...result,
+      attestationChainValid: FAIL,
+      attestationKeyBinding: UNAVAILABLE,
+      attestationNotRevoked: UNAVAILABLE,
+    };
   }
 
   // A lone certificate is not a chain. Guarding this explicitly matters: the
@@ -305,7 +358,12 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
       `attestation chain has only ${chain.length} certificate: a single certificate cannot ` +
         'chain to an issuer, so it establishes no hardware backing',
     );
-    return { ...result, attestationChainValid: FAIL, attestationKeyBinding: UNAVAILABLE };
+    return {
+      ...result,
+      attestationChainValid: FAIL,
+      attestationKeyBinding: UNAVAILABLE,
+      attestationNotRevoked: UNAVAILABLE,
+    };
   }
 
   let linked = true;
@@ -347,6 +405,11 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
       );
     }
   }
+
+  // Revocation. Checked across the WHOLE chain, not just the leaf: Google's list
+  // carries CA_COMPROMISE entries, and a compromised intermediate invalidates
+  // everything beneath it however clean the leaf looks.
+  result.attestationNotRevoked = evaluateRevocation(chain, notes);
 
   if (signingKeyDer) {
     const leafKeyDer = chain[0].publicKey.export({ type: 'spki', format: 'der' });

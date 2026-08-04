@@ -53,6 +53,7 @@ data class VerificationReport(
             "attestationChainValid",
             "attestationKeyBinding",
             "attestationRootTrusted",
+            "attestationNotRevoked",
             "timestampPlausible",
             "locationPlausible",
         )

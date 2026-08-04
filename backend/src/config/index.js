@@ -121,6 +121,30 @@ const config = {
     rootsPath:
       process.env.GOOGLE_ATTESTATION_ROOTS_PATH ||
       path.join(repoRoot, 'backend', 'data', 'google-attestation-roots.pem'),
+
+    revocation: {
+      // Google's published status list. Unlike the roots above this is NOT
+      // pinned: revocation data is only useful when fresh, and a stale snapshot
+      // fails open — it reports a since-revoked key as fine. Pinning would
+      // guarantee that failure.
+      url:
+        process.env.ATTESTATION_REVOCATION_URL ||
+        'https://android.googleapis.com/attestation/status',
+
+      // Matches the endpoint's own `Cache-Control: public, max-age=86400`.
+      refreshMillis: envInt('ATTESTATION_REVOCATION_REFRESH_MS', 24 * 60 * 60 * 1000),
+
+      // How stale a snapshot may be before it stops being usable. Beyond this
+      // the check reports `unavailable` rather than answering from data old
+      // enough to be wrong — "we could not check" is a different claim from
+      // "not revoked", and the two must never be collapsed.
+      maxAgeMillis: envInt('ATTESTATION_REVOCATION_MAX_AGE_MS', 7 * 24 * 60 * 60 * 1000),
+
+      // Off by default in tests so no suite reaches the network. Any other
+      // environment that disables it gets `unavailable`, never a silent pass.
+      enabled: (process.env.ATTESTATION_REVOCATION_ENABLED ??
+        String(process.env.NODE_ENV !== 'test')) === 'true',
+    },
   },
 
   // Shipped with every verdict so a consumer cannot present a `verified`
@@ -139,12 +163,16 @@ const config = {
     // the chain "is not checked against Google's published roots" — true at the
     // time, and false since Phase 8, which pins those roots and checks them.
     //
-    // What remains true is narrower than "hardware-backed", and is what this now
-    // says: anchoring is real but partial. Certificate revocation is not
-    // consulted (Google publishes a status list keyed by serial), and the
-    // attestation extension itself is not parsed, so the security level the
-    // device claims — TrustedEnvironment vs StrongBox — is never verified.
-    'Hardware backing is supported only when `attestationRootTrusted` passes, and even then it is partial: certificate revocation is not checked, and the attestation extension’s declared security level is not parsed.',
+    // Revocation joined the checks after this, so the wording moved again. What
+    // is still NOT verified is the attestation extension itself: the device's
+    // claimed security level — TrustedEnvironment vs StrongBox — and its
+    // Verified Boot state are taken on trust.
+    //
+    // `attestationNotRevoked` is named rather than assumed because it fails
+    // OPEN: with no status list, a revoked certificate looks exactly like a
+    // clean one, so its `unavailable` has to be read, not skipped.
+    'Hardware backing is supported only when `attestationRootTrusted` and `attestationNotRevoked` both pass — read them; revocation reports `unavailable` when the list could not be fetched, which is not the same as a clean result.',
+    'Even then it is partial: the attestation extension is not parsed, so the device’s claimed security level (TrustedEnvironment vs StrongBox) and Verified Boot state are not verified.',
     'Does NOT prove the depicted event was real, unstaged, or correctly described.',
     'Not a standalone legal certificate; BSA 2023 s.63 requires human certification.',
   ],

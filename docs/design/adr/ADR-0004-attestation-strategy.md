@@ -73,14 +73,47 @@ successfully, and a package captured on the device now reports
 `attestationRootTrusted: pass`. Unlike the Phase-3 hand check noted above, this
 one is a code path with tests behind it.
 
+### Revocation — implemented 2026-08-03
+
+`attestationNotRevoked` checks every certificate in the chain (not just the leaf
+— the list carries `CA_COMPROMISE` entries, and a compromised intermediate
+invalidates everything beneath it) against
+`https://android.googleapis.com/attestation/status`.
+
+Unlike the roots this list is **fetched, not pinned**: revocation data is only
+useful fresh, and a pinned snapshot would guarantee the failure it exists to
+prevent. It is refreshed in the background against the endpoint's own
+`Cache-Control: max-age=86400`, so `verifyProofPackage` stays synchronous instead
+of awaiting a 170 KB download per request.
+
+**It fails open by nature, and the code is built around that.** With no list, a
+revoked certificate is indistinguishable from a clean one — so a missing, stale
+(beyond `maxAgeMillis`), or never-fetched snapshot yields `unavailable`, never
+`pass`, and raises an advisory saying the check did not run. A failed refresh
+leaves the previous snapshot alone rather than discarding it.
+
+#### The encoding trap
+
+Google documents the key as "the certificate serial number in lowercase hex".
+Node's `X509Certificate.serialNumber` is **uppercase**, so the documented lookup
+matches nothing and every certificate reads as un-revoked.
+
+The published list is also not uniformly hex. Of 1732 entries observed on
+2026-08-03, **968 contain no `a`–`f` at all** — for hex strings of that length the
+expected count is about 0.1, so those are decimal renderings. A spec-faithful
+hex-only lookup would therefore miss **56% of the list**.
+
+Every plausible rendering is probed (lowercase hex, with and without leading
+zeros, and decimal). Verified against the live list: a hex-keyed entry
+(`c35747a0…`) and a decimal-keyed entry (`6681152659205225093`, which Node would
+report as `5CB838F1FE157A85`) are both found, each returning `KEY_COMPROMISE`.
+The project's own device certificates appear on neither.
+
 **Still not done, and still claimed nowhere:**
 
-- **Revocation.** Google's status list
-  (`https://android.googleapis.com/attestation/status`, keyed by certificate
-  serial) is not consulted, so a key revoked for compromise still verifies here.
-- **The attestation extension** (OID `1.3.6.1.4.1.11129.2.1.17`) is still not
-  parsed, so `securityLevel` and `verifiedBootState` remain unverified — the
-  device's claim of TrustedEnvironment or StrongBox is taken on trust.
+- **The attestation extension** (OID `1.3.6.1.4.1.11129.2.1.17`) is not parsed,
+  so `securityLevel` and `verifiedBootState` remain unverified — the device's
+  claim of TrustedEnvironment or StrongBox is taken on trust.
 
 The shipped `verdictLimitations` says exactly this, so no consumer of a verdict is
 told more than the above supports.
