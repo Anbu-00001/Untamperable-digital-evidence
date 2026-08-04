@@ -108,6 +108,21 @@ const config = {
     process.env.PROOF_EXAMPLE_PATH ||
     path.join(repoRoot, 'docs', 'design', 'examples', 'proof-package.example.json'),
 
+  // ------------------------------------------------------------------------
+  // Hardware key attestation (Phase 8).
+  // ------------------------------------------------------------------------
+  attestation: {
+    // Pinned Google attestation roots. Deliberately a file on disk rather than a
+    // fetch from https://android.googleapis.com/attestation/root at verify time:
+    // these are TRUST ANCHORS, and one fetched over the network is only as
+    // trustworthy as the fetch. Anyone able to answer for that host could supply
+    // their own root and every forged chain would verify. See the header of the
+    // file itself for provenance and how to update it.
+    rootsPath:
+      process.env.GOOGLE_ATTESTATION_ROOTS_PATH ||
+      path.join(repoRoot, 'backend', 'data', 'google-attestation-roots.pem'),
+  },
+
   // Shipped with every verdict so a consumer cannot present a `verified`
   // result as more than it is (research/02 §7, research/06 §7).
   verdictLimitations: [
@@ -116,12 +131,20 @@ const config = {
     // not attest still verifies (ADR-0006 §5) — so hardware backing is reported
     // by `attestationPresent`/`attestationKeyBinding`, not asserted blanket.
     'Proves the media and metadata are unaltered since capture and were signed by one specific key held in the capturing device keystore.',
-    // Was: "Hardware backing of that key is established only when the attestation
-    // checks pass." That overstated it. The chain is never anchored to a Google
-    // root (see ADR-0004's implementation-status correction), so passing checks
-    // show the chain is self-consistent and covers the signing key — which a
-    // self-issued chain also achieves. Reported via `attestationRootTrusted`.
-    'Does NOT establish that the signing key is hardware-backed: the attestation chain is not checked against Google’s published roots.',
+    // History of this line, because it has been wrong in both directions.
+    //
+    // It first read "hardware backing is established when the attestation checks
+    // pass", which overstated things: nothing anchored the chain to Google, so a
+    // self-issued chain reached the same verdict. It was then corrected to say
+    // the chain "is not checked against Google's published roots" — true at the
+    // time, and false since Phase 8, which pins those roots and checks them.
+    //
+    // What remains true is narrower than "hardware-backed", and is what this now
+    // says: anchoring is real but partial. Certificate revocation is not
+    // consulted (Google publishes a status list keyed by serial), and the
+    // attestation extension itself is not parsed, so the security level the
+    // device claims — TrustedEnvironment vs StrongBox — is never verified.
+    'Hardware backing is supported only when `attestationRootTrusted` passes, and even then it is partial: certificate revocation is not checked, and the attestation extension’s declared security level is not parsed.',
     'Does NOT prove the depicted event was real, unstaged, or correctly described.',
     'Not a standalone legal certificate; BSA 2023 s.63 requires human certification.',
   ],

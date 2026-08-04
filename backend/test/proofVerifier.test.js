@@ -181,22 +181,27 @@ test('a single self-signed certificate cannot pass as an attestation chain', () 
   );
 });
 
-test('a present attestation chain never claims a trusted root', () => {
-  // No root set is consulted anywhere in this service, so `attestationRootTrusted`
-  // must never report `pass`. It exists as a named check precisely so the gap is
-  // visible in every report rather than buried in a comment: a chain that links
-  // and binds still proves nothing about its origin until it is anchored to a
-  // published Google root.
+test('a lone self-signed certificate is not treated as an anchored chain', () => {
+  // A single certificate cannot chain to an issuer, so linkage fails and root
+  // trust is not assessable — `unavailable`, which is a different claim from
+  // "checked and did not anchor" (`fail`) and must not be collapsed into it.
+  //
+  // This test previously asserted that `attestationRootTrusted` could NEVER be
+  // `pass`, because at the time no root set was consulted anywhere. Phase 8 pins
+  // Google's published roots and checks them, so that invariant is gone; what
+  // survives is the part that still matters — a chain which does not anchor must
+  // say so, or a reader will take it for hardware-backed.
   const { pkg, media } = buildSignedPackage();
   pkg.signature.attestationCertificateChain = [SELF_SIGNED_CERT_B64];
 
   const { checks, advisories } = verifyProofPackage(pkg, media, { nowMillis: NOW });
 
   assert.strictEqual(checks.attestationPresent, PASS);
+  assert.strictEqual(checks.attestationChainValid, FAIL);
   assert.strictEqual(checks.attestationRootTrusted, UNAVAILABLE);
   assert.ok(
-    advisories.some((a) => a.includes('published attestation roots')),
-    'an unanchored chain must say so, or a reader will read it as hardware-backed',
+    advisories.some((a) => /anchor/i.test(a) && /hardware backing/i.test(a)),
+    `an unanchored chain must say so. advisories were:\n${advisories.join('\n')}`,
   );
 });
 

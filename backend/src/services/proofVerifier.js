@@ -5,6 +5,7 @@ const canonicalize = require('canonicalize');
 const config = require('../config');
 const { sha256Hex } = require('./hashService');
 const plausibility = require('./plausibility');
+const { isAnchoredToPinnedRoot } = require('./attestationRoots');
 
 /**
  * Cryptographic verification of a proof package (research/02 §8 Step 10).
@@ -168,15 +169,24 @@ function collectAdvisories(pkg, checks, advisories, historyReadFailed = false) {
       'No key attestation chain: the signature proves the bundle is unaltered since ' +
         'capture, but not that the signing key lives in secure hardware.',
     );
-  } else if (checks.attestationRootTrusted !== PASS) {
-    // A chain that links and binds still proves nothing about its origin until
-    // its top certificate is anchored to a published Google root. Saying so is
-    // the difference between "attested" and "carries something shaped like an
-    // attestation" — and an attacker can mint the latter freely.
+  } else if (checks.attestationRootTrusted === FAIL) {
+    // The chain links and binds, but its top certificate is not one of Google's
+    // published roots and was not issued by one. That is the shape a self-minted
+    // CA produces, so it is stated far more firmly than a missing chain.
     advisories.push(
-      'The attestation chain is internally consistent and covers the signing key, but it ' +
-        'was NOT checked against Google’s published attestation roots. Hardware backing is ' +
-        'therefore not established: a self-issued chain would reach this same result.',
+      'The attestation chain is internally consistent, but it does NOT anchor to any ' +
+        'published Google attestation root. A chain minted by anyone with their own CA ' +
+        'looks exactly like this, so hardware backing is not established.',
+    );
+  } else if (checks.attestationRootTrusted === UNAVAILABLE) {
+    // Root trust could not be assessed at all — a broken chain above it, or this
+    // service failing to read its own pinned roots. Distinguished from FAIL
+    // because "we could not check" and "we checked and it did not anchor" are
+    // different claims and must not be collapsed.
+    advisories.push(
+      'The attestation chain could not be anchored to a published Google root — the ' +
+        'anchoring check did not complete. Hardware backing is therefore not established ' +
+        'by this report.',
     );
   }
 
@@ -232,13 +242,31 @@ function collectAdvisories(pkg, checks, advisories, historyReadFailed = false) {
  * root. An attacker can mint their own CA, issue a leaf over their own software
  * key, and produce a chain that links perfectly and binds correctly.
  *
- * That gap is reported explicitly as `attestationRootTrusted: unavailable`
- * rather than left implicit, so a reader is never told hardware backing was
- * established when only self-consistency was. Implementing it means fetching
- * Google's published roots (they rotated in 2026 and there is more than one, so
- * they must be fetched rather than pinned) and verifying the top certificate
- * against that set — plus parsing the attestation extension (OID
- * 1.3.6.1.4.1.11129.2.1.17) for `securityLevel` and `verifiedBootState`.
+ * ## What Phase 8 added
+ *
+ * `attestationRootTrusted` is now a real check: the top of the chain is anchored
+ * against Google's **pinned** published roots (`./attestationRoots`). That closes
+ * the forgery route described above — a self-minted CA no longer reaches the same
+ * verdict as a genuine Google-rooted chain.
+ *
+ * An earlier revision of this comment said the roots "must be fetched rather than
+ * pinned" because they rotate and there is more than one. Both halves of that are
+ * true — there are two current roots and a new ECDSA one began signing on
+ * 2026-02-01 — but the conclusion was wrong. A trust anchor fetched at verify
+ * time is only as trustworthy as the fetch, so anyone able to answer for
+ * `android.googleapis.com` could supply their own root and every forged chain
+ * would verify. The roots are therefore pinned in `data/`, with their provenance
+ * and update procedure in the file header.
+ *
+ * ## What is STILL not established
+ *
+ * - **Revocation.** Google publishes a status list at
+ *   `https://android.googleapis.com/attestation/status`, keyed by certificate
+ *   serial. It is not consulted, so a key revoked for compromise still verifies
+ *   here. This is the next gap, and it is not claimed to be solved.
+ * - **The attestation extension itself** (OID 1.3.6.1.4.1.11129.2.1.17) is not
+ *   parsed, so `securityLevel` (TrustedEnvironment vs StrongBox) and
+ *   `verifiedBootState` are not checked against expectations.
  */
 function verifyAttestationChain(pkg, signingKeyDer, notes) {
   const chainBase64 = pkg.signature.attestationCertificateChain;
@@ -258,9 +286,6 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
     };
   }
 
-  // Never `pass`: no root set is consulted anywhere in this service. Declared as
-  // a real check so the limit is visible in every report instead of living in a
-  // comment (ADR-0005 §1 — a named check must be a check that ran).
   const result = { attestationPresent: PASS, attestationRootTrusted: UNAVAILABLE };
   let chain;
   try {
@@ -289,6 +314,39 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
   }
   result.attestationChainValid = linked ? PASS : FAIL;
   if (!linked) notes.push('attestation certificates do not form a valid signature chain');
+
+  // Anchor the top of the chain to a pinned Google root.
+  //
+  // Only meaningful when the chain links: a Google root sitting on top of
+  // certificates that do not actually sign one another says nothing about the
+  // leaf, so reporting `pass` there would be the exact overclaim this check was
+  // added to remove. The broken linkage is already reported by the check above.
+  if (!linked) {
+    result.attestationRootTrusted = UNAVAILABLE;
+    notes.push(
+      'the chain does not link, so it cannot be anchored to a root — root trust was not assessed',
+    );
+  } else {
+    const top = chain[chain.length - 1];
+    let anchor;
+    try {
+      anchor = isAnchoredToPinnedRoot(top);
+    } catch (err) {
+      // A misconfigured or unreadable root file is a SERVER fault, not evidence
+      // against the package. Saying `fail` here would accuse every device of
+      // forgery because of our own deployment error.
+      notes.push(`attestation roots unavailable, root trust not assessed: ${err.message}`);
+      return result;
+    }
+    result.attestationRootTrusted = anchor.anchored ? PASS : FAIL;
+    if (!anchor.anchored) {
+      notes.push(
+        'the attestation chain does not anchor to any pinned Google root: either it was not ' +
+          'issued by Google, or this device uses a root absent from ' +
+          'backend/data/google-attestation-roots.pem',
+      );
+    }
+  }
 
   if (signingKeyDer) {
     const leafKeyDer = chain[0].publicKey.export({ type: 'spki', format: 'der' });

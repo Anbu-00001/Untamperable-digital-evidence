@@ -46,6 +46,45 @@ Google's published attestation roots.
 > and parsing the attestation extension (OID `1.3.6.1.4.1.11129.2.1.17`) for
 > `securityLevel` and `verifiedBootState`. That work is not done.
 
+### Root anchoring — implemented 2026-08-03
+
+The correction above is now **partly superseded**: `attestationRootTrusted` is a
+real check.
+
+Google's two current roots are **pinned** in `backend/data/google-attestation-roots.pem`
+(provenance in the file header; fetched from `https://android.googleapis.com/attestation/root`).
+The correction said the fix "requires *fetching*" them — that was the wrong
+conclusion from a correct observation. Roots do rotate and there is more than
+one, but they are trust anchors: fetched at verify time they are only as
+trustworthy as the fetch, and anyone able to answer for `android.googleapis.com`
+could hand over their own root and make every forged chain verify. Pinning keeps
+the trust decision in the diff and lets verification run offline.
+
+The top certificate anchors either by **byte-identical DER match** to a pinned
+root, or by being **directly issued by** one (chains do not always carry the
+root). Matching on subject or serial was rejected: those are attacker-chosen, and
+a test asserts that a self-signed certificate carrying the genuine root's exact
+subject is still refused.
+
+Evidence this works on real hardware, not just in tests: the CPH2591's
+4-certificate chain ends in a certificate whose DER is byte-identical to Google's
+pinned RSA-4096 root (`sha256 cedb1cb6…`), `openssl verify` walks the chain to it
+successfully, and a package captured on the device now reports
+`attestationRootTrusted: pass`. Unlike the Phase-3 hand check noted above, this
+one is a code path with tests behind it.
+
+**Still not done, and still claimed nowhere:**
+
+- **Revocation.** Google's status list
+  (`https://android.googleapis.com/attestation/status`, keyed by certificate
+  serial) is not consulted, so a key revoked for compromise still verifies here.
+- **The attestation extension** (OID `1.3.6.1.4.1.11129.2.1.17`) is still not
+  parsed, so `securityLevel` and `verifiedBootState` remain unverified — the
+  device's claim of TrustedEnvironment or StrongBox is taken on trust.
+
+The shipped `verdictLimitations` says exactly this, so no consumer of a verdict is
+told more than the above supports.
+
 ## Rationale
 
 ### 1. It certifies the claim the proof package actually makes
