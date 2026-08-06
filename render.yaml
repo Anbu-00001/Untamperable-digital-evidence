@@ -52,3 +52,20 @@ services:
         value: "900000"
       - key: RATE_LIMIT_MAX
         value: "100"
+      # Proof-of-possession on the two endpoints that disclose content:
+      # GET /proof/:eventId (carries GPS) and /proof/:eventId/media (the photo).
+      # GET /verify/:eventId stays public — a verdict carries no coordinates, and
+      # anyone being able to check a claim is the point of the system.
+      #
+      # Turning this off reverts those endpoints to "knowing the UUID is enough".
+      # Only true/false/1/0/yes/no/on/off parse; anything else stops the process
+      # rather than quietly failing open.
+      - key: PROOF_READ_AUTH
+        value: "true"
+      # NOTE — not set here, and worth understanding before relying on the limit
+      # above: without REDIS_URL the limiter counts per process. A probe on
+      # 2026-08-06 found this deployment answering from THREE independent
+      # counters, so RATE_LIMIT_MAX was effectively ~300, not 100. Add a Redis
+      # instance and set REDIS_URL to make the configured number the real one.
+      # - key: REDIS_URL
+      #   fromService: ...

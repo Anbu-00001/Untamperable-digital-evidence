@@ -5,6 +5,7 @@ const config = require('./config');
 const { loadValidator } = require('./services/proofSchema');
 const { loadRoots } = require('./services/attestationRoots');
 const revocation = require('./services/attestationRevocation');
+const { closeRateLimitStore, describeStore } = require('./services/rateLimitStore');
 
 // Fail fast if the shared schema can't be loaded/compiled at boot.
 try {
@@ -60,11 +61,20 @@ if (revocationStarted) {
 const app = createApp();
 const server = app.listen(config.port, () => {
   console.log(`[reality-lock] backend listening on :${config.port} (env=${config.env})`);
+  // Named on every boot so the deployment's real limiting behaviour is visible
+  // in the log, instead of having to be inferred from probe traffic the way it
+  // was on 2026-08-06.
+  console.log(`[reality-lock] rate limiter store: ${describeStore()}`);
 });
 
 function shutdown(signal) {
   console.log(`[reality-lock] ${signal} received, shutting down`);
-  server.close(() => process.exit(0));
+  server.close(() => {
+    // Hang up the rate limiter's Redis connection, if one was opened, rather
+    // than leaving the server to time the socket out. Awaited inside the close
+    // callback so it cannot race process.exit.
+    closeRateLimitStore().finally(() => process.exit(0));
+  });
 }
 
 ['SIGINT', 'SIGTERM'].forEach((sig) => process.on(sig, () => shutdown(sig)));

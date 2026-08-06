@@ -6,7 +6,9 @@ const crypto = require('crypto');
 
 const { createApp } = require('../src/app');
 const { createStore, setSharedStore } = require('../src/store');
-const { buildSignedPackage, locationAt, COORDS } = require('./helpers/signedPackage');
+const {
+  buildSignedPackage, locationAt, COORDS, proofOfPossessionHeader,
+} = require('./helpers/signedPackage');
 
 /**
  * Drives the real Express app over a real socket, so the middleware chain —
@@ -108,7 +110,7 @@ test('media upload is accepted only when it hashes to the signed digest', async 
 
 test('media that does not match the signed digest is refused, not stored', async () => {
   await withServer(async (base) => {
-    const { pkg, media } = buildSignedPackage();
+    const { pkg, media, privateKey } = buildSignedPackage();
     await postJson(base, '/proof', pkg);
 
     const tampered = Buffer.from(media);
@@ -121,8 +123,18 @@ test('media that does not match the signed digest is refused, not stored', async
     assert.strictEqual(body.error, 'media_hash_mismatch');
     assert.strictEqual(body.expected, pkg.media.sha256);
 
-    // The store must be empty of media — refusing means refusing.
-    assert.strictEqual((await fetch(`${base}/proof/${pkg.eventId}/media`)).status, 404);
+    // The store must be empty of media — refusing means refusing. Read back
+    // with proof of possession, so a 404 here means "no media" rather than
+    // "not authorised", which is the distinction being asserted.
+    const mediaPath = `/proof/${pkg.eventId}/media`;
+    const authorized = await fetch(`${base}${mediaPath}`, {
+      headers: {
+        Authorization: proofOfPossessionHeader({
+          privateKey, path: mediaPath, eventId: pkg.eventId,
+        }),
+      },
+    });
+    assert.strictEqual(authorized.status, 404);
   });
 });
 
@@ -149,17 +161,35 @@ test('an empty media body is rejected', async () => {
 
 test('GET /proof returns the package and the media round-trips byte-exactly', async () => {
   await withServer(async (base) => {
-    const { pkg, media } = buildSignedPackage();
+    const { pkg, media, privateKey } = buildSignedPackage();
     await postJson(base, '/proof', pkg);
     await postBytes(base, `/proof/${pkg.eventId}/media`, media);
 
-    const res = await fetch(`${base}/proof/${pkg.eventId}`);
+    // Both reads are gated on proof of possession, so each carries its own
+    // signature: the base covers the path, and a header signed for the package
+    // route is deliberately not valid for the media route.
+    const pkgPath = `/proof/${pkg.eventId}`;
+    const res = await fetch(`${base}${pkgPath}`, {
+      headers: {
+        Authorization: proofOfPossessionHeader({
+          privateKey, path: pkgPath, eventId: pkg.eventId,
+        }),
+      },
+    });
     const body = await res.json();
     assert.strictEqual(res.status, 200);
     assert.deepStrictEqual(body.package, pkg);
     assert.strictEqual(body.mediaPresent, true);
 
-    const bytes = Buffer.from(await (await fetch(`${base}/proof/${pkg.eventId}/media`)).arrayBuffer());
+    const mediaPath = `/proof/${pkg.eventId}/media`;
+    const mediaRes = await fetch(`${base}${mediaPath}`, {
+      headers: {
+        Authorization: proofOfPossessionHeader({
+          privateKey, path: mediaPath, eventId: pkg.eventId,
+        }),
+      },
+    });
+    const bytes = Buffer.from(await mediaRes.arrayBuffer());
     // Byte-exact, or the media leaf would not recompute.
     assert.deepStrictEqual(bytes, media);
   });

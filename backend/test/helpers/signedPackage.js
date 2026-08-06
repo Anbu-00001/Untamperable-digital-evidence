@@ -55,6 +55,11 @@ function buildSignedPackage(overrides = {}) {
 
   return {
     media,
+    // Returned so a test can also prove possession of this key when reading the
+    // package back: GET /proof/:eventId and its media are gated on a signed
+    // challenge (middleware/requireProofOwnership.js), and without the private
+    // key a test can build a package but never read it again.
+    privateKey,
     pkg: {
       schemaUrn: 'urn:realitylock:proof-package:1.0.0',
       schemaVersion: '1.0.0',
@@ -109,4 +114,27 @@ const COORDS = {
   newYork: [40.7128, -74.006],
 };
 
-module.exports = { buildSignedPackage, locationAt, COORDS };
+/**
+ * Builds the `Authorization` header that proves possession of `privateKey` for
+ * a read of `path`.
+ *
+ * Lives here rather than in one test file because every test that reads a stored
+ * package back now needs it, and a second hand-rolled copy of the signature base
+ * would be a copy that can drift from the server's.
+ */
+function proofOfPossessionHeader({ privateKey, path, eventId, method = 'GET' }) {
+  // Required lazily: this helper is loaded by tests that never read anything.
+  // eslint-disable-next-line global-require
+  const { SCHEME, buildSignatureBase } = require('../../src/services/proofOfPossession');
+  const created = Math.floor(Date.now() / 1000);
+  const nonce = crypto.randomBytes(12).toString('base64url');
+  const signature = crypto
+    .createSign('SHA256')
+    .update(Buffer.from(buildSignatureBase({ method, path, eventId, created, nonce }), 'utf8'))
+    .sign({ key: privateKey, dsaEncoding: 'der' })
+    .toString('base64');
+  return `${SCHEME} eventId="${eventId}",created="${created}",` +
+    `nonce="${nonce}",signature="${signature}"`;
+}
+
+module.exports = { buildSignedPackage, locationAt, COORDS, proofOfPossessionHeader };

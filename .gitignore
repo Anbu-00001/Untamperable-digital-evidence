@@ -23,6 +23,21 @@ Thumbs.db
 *.keystore
 *.jks
 
+# ...but Google's attestation roots are PUBLIC trust anchors, not credentials,
+# and `*.pem` above was silently swallowing them. The consequence was not a
+# quiet one: `loadRoots()` fails fast by design, so the file never reaching the
+# image took the whole service down on deploy (Render, 2026-08-06 — "ENOENT:
+# /app/backend/data/google-attestation-roots.pem", exit status 1).
+#
+# The rule above is kept exactly as it is: a blanket `*.pem` ban is the right
+# default when the same tree holds signing material, and weakening it to fix one
+# public file would trade a deploy failure for a leaked-key risk. This is a
+# single-file exception instead, and it is only correct while the file stays what
+# it claims to be — PUBLIC certificates. Verified before un-ignoring: the file
+# contains 2 CERTIFICATE blocks and no PRIVATE KEY block. Re-check that before
+# adding any further exception here.
+!backend/data/google-attestation-roots.pem
+
 # Android & Gradle
 .gradle/
 .kotlin/

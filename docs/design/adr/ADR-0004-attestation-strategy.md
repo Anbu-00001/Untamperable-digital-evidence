@@ -170,6 +170,23 @@ cannot be fetched, and boot state does not gate the verdict.
 The shipped `verdictLimitations` says exactly this, so no consumer of a verdict is
 told more than the above supports.
 
+### The predicted forgery shape, observed for real — 2026-08-06
+
+The correction at the top of this section warned, before any of the above was
+built: *"a self-issued CA and leaf over an ordinary software key produce a chain
+that links and binds correctly."* That was a reasoned prediction, not yet an
+observation. Scenario 5 of `docs/design/PHASE6_SECURITY_VALIDATION.md` has since
+produced exactly that shape from a real Android build: a `google_apis_playstore`
+x86_64 emulator (android-36.1) generates a genuine 3-certificate chain rooted in
+a self-signed **"Droid Unregistered Device CA / Google Test LLC"** certificate —
+not a device forging Google's identity, but the AVD's own stand-in root, which
+serves the same test: it is not one of the two pinned production roots. The chain
+links and binds exactly as predicted (`attestationChainValid: pass`,
+`attestationKeyBinding: pass`), and is still caught, independently, by
+`attestationRootTrusted: fail` (DER does not match a pinned root) and by
+`attestationSecurityLevel: fail` (the extension itself reports `Software`). Full
+per-check output and how the capture was driven are in the PHASE6 doc.
+
 ## Rationale
 
 ### 1. It certifies the claim the proof package actually makes

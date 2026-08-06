@@ -43,6 +43,27 @@ function envList(name, fallback) {
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+/**
+ * Reads a boolean switch.
+ *
+ * Only an explicit, recognised value flips the flag; anything else throws rather
+ * than falling back. This guards a specific and nasty mistake: these flags gate
+ * security controls, and `PROOF_READ_AUTH=flase` (or `no`, or `0 `) silently
+ * read as "not the string true" would turn an access control OFF while looking
+ * like it had been configured. A typo must stop the process, not open the door.
+ */
+function envFlag(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const normalised = String(raw).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalised)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalised)) return false;
+  throw new Error(
+    `${name} must be one of true/false/1/0/yes/no/on/off, got "${raw}" — refusing to ` +
+      'guess, because guessing wrong on a security switch fails open',
+  );
+}
+
 // Repo root, so the backend can locate the shared schema in docs/ without a
 // copy. __dirname here is <repo>/backend/src/config.
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
@@ -78,9 +99,15 @@ const config = {
   // trivially bypassed, too strict and every request looks like one client.
   //
   // Default 1: a single platform load balancer in front of the app, which is the
-  // usual PaaS shape (Render included). VERIFY IT against the actual deployment
-  // rather than trusting this default — if the hosting provider adds a hop, the
-  // limiter starts keying on the proxy instead of the caller.
+  // usual PaaS shape (Render included).
+  //
+  // VERIFIED against the live deployment on 2026-08-06, no longer assumed:
+  // 20 requests to civicmesh.onrender.com each carrying a DIFFERENT forged
+  // X-Forwarded-For kept draining one bucket (remaining 587 -> 573) instead of
+  // opening 20 fresh ones. A caller-controlled key would have shown every
+  // request at the window maximum. Re-run `scripts/ops/verify_trust_proxy.sh`
+  // after any change to the hosting topology — this is a property of the
+  // deployment, not of this file.
   // ------------------------------------------------------------------------
   trustProxyHops: envTrustProxyHops('TRUST_PROXY_HOPS', 1),
 
@@ -94,6 +121,41 @@ const config = {
     // the service unhealthy and pull it out of rotation. The limit is set well
     // above any plausible health-check cadence.
     healthLimit: envInt('RATE_LIMIT_HEALTH_MAX', 600),
+
+    // Where the limiter keeps its counters.
+    //
+    // Unset (the default) means express-rate-limit's in-process MemoryStore,
+    // which is correct for exactly one process and wrong for any other number.
+    // That is not hypothetical here: the same 2026-08-06 probe found the live
+    // deployment answering from THREE independent counters (the 20 observations
+    // split cleanly into three series each decrementing by exactly 1), so the
+    // real allowance was roughly 3x the configured one. The spoofing check still
+    // passed — this is a capacity bug, not an auth bypass — but a limit that is
+    // silently triple what it says is not a limit anyone should rely on.
+    //
+    // Setting REDIS_URL moves the counters to one shared store and makes the
+    // configured number the true number, whatever the process count.
+    redisUrl: process.env.REDIS_URL || null,
+  },
+
+  // ------------------------------------------------------------------------
+  // Proof-of-possession on the two endpoints that hand back a package's
+  // contents: GET /proof/:eventId (carries GPS) and /proof/:eventId/media (the
+  // photograph). See services/proofOfPossession.js for the scheme.
+  //
+  // Defaults to ON. Before this, the only control on either endpoint was
+  // knowing a UUIDv4 — a capability that cannot be revoked and leaks the moment
+  // it reaches a log or a screenshot. Turning it on breaks no first-party
+  // client: the Android app only ever POSTs to /proof, and both e2e scripts
+  // read verdicts from /verify, which stays public by design.
+  // ------------------------------------------------------------------------
+  proofReadAuth: {
+    enabled: envFlag('PROOF_READ_AUTH', true),
+    // How far a signed request's `created` may sit from the server clock. Wide
+    // enough for an unsynchronised phone, narrow enough that a captured header
+    // is useful only briefly — the nonce cache is per-process, so this window,
+    // not the cache, is what actually bounds a replay.
+    maxSkewSeconds: envInt('PROOF_READ_AUTH_SKEW_SECONDS', 300),
   },
 
   // The proof-package schema is the single shared contract with the app. Read

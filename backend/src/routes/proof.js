@@ -5,6 +5,7 @@ const config = require('../config');
 const { loadValidator } = require('../services/proofSchema');
 const { sha256Hex } = require('../services/hashService');
 const { getSharedStore, isSafeEventId } = require('../store');
+const { requireProofOwnership } = require('../middleware/requireProofOwnership');
 
 const router = express.Router();
 
@@ -127,8 +128,11 @@ router.post(
  * Deliberately distinct from the public `GET /verify/:eventId`, which returns
  * only a verdict: the package carries GPS coordinates, so handing it out is a
  * different act from confirming that it verifies (ADR-0006 §7).
+ *
+ * Gated on proof of possession of the signing key. Knowing the event ID is no
+ * longer sufficient — see middleware/requireProofOwnership.js.
  */
-router.get('/:eventId', (req, res) => {
+router.get('/:eventId', requireProofOwnership, (req, res) => {
   const { eventId } = req.params;
   if (!isSafeEventId(eventId)) {
     return res.status(400).json({ error: 'invalid_event_id' });
@@ -148,8 +152,10 @@ router.get('/:eventId', (req, res) => {
  * GET /proof/:eventId/media
  * Returns the stored media bytes, so an independent verifier can recompute the
  * media leaf itself rather than trusting our recomputation of it.
+ *
+ * Gated identically to the package route above: this returns the photograph.
  */
-router.get('/:eventId/media', (req, res) => {
+router.get('/:eventId/media', requireProofOwnership, (req, res) => {
   const { eventId } = req.params;
   if (!isSafeEventId(eventId)) {
     return res.status(400).json({ error: 'invalid_event_id' });

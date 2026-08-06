@@ -32,7 +32,7 @@ truth* — a real TEE, a real GNSS fix, a real camera clock — runs on the phon
 | 2. Tamper metadata | Backend + e2e | **pass** | Pure computation |
 | 3. Mock location | Phone | **pass** | Tests our mapping; needs no OEM cooperation |
 | 4. Gallery import | Structural assertion | **pass** | There is no import path to block |
-| 5. Weak/absent attestation | Phone (proven) + emulator (outstanding) | **half** | Needs a device with no hardware attestation |
+| 5. Weak/absent attestation | Phone + emulator | **pass** | Needs a device with no hardware attestation |
 
 Instrumented suite on the CPH2591: **18 tests — 11 asserted and passed, 7 skipped
 for documented environment limits, 0 failed.** The skips are all cases where the
@@ -117,7 +117,7 @@ absence of a button is not absence of a path.
 
 ## 5. ~~Rooted-emulator capture → Play Integrity verdict reflects it~~ → **weak or absent attestation is reported as such**
 
-**Rewritten. Status: half proven; emulator half outstanding.**
+**Rewritten. Status: proven on both environments (2026-08-06).**
 
 **Why the original cannot be run:** it names Play Integrity, which this project
 deliberately does not implement. ADR-0004 chose Android Key Attestation instead —
@@ -128,20 +128,76 @@ signal. Play Integrity is recorded there as a Phase-7 stretch.
 **The equivalent claim, in terms this build can support:** the system must never
 report hardware backing it did not obtain.
 
-| Environment | Expected | Status |
-|---|---|---|
-| OnePlus CPH2591 (real TEE) | `tier=TRUSTED_ENVIRONMENT`, 4-cert chain, root matches a published Google root | **Proven** (Phase 3) |
-| Emulator / no attestation keys | `attestationPresent: unavailable` + advisory; verdict may still be `verified` | Outstanding |
+| Environment | Expected (as written) | Actual, verified | Status |
+|---|---|---|---|
+| OnePlus CPH2591 (real TEE) | `tier=TRUSTED_ENVIRONMENT`, 4-cert chain, root matches a published Google root | matches | **Proven** (Phase 3) |
+| Emulator / no hardware attestation | `attestationPresent: unavailable` + advisory; verdict may still be `verified` | chain **present**, `attestationRootTrusted: fail`, `attestationSecurityLevel: fail` (`Software`); **`verdict: failed`** | **Proven, prediction corrected by evidence** |
 
-The second row is the adversarial half, and the verdict rules already encode the
-honest answer: a missing chain is `unavailable` **plus an advisory**, not `fail`
-(ADR-0006 §5) — absence of evidence is not evidence of a defect — while a chain
-that is *present but does not bind to the signing key* does fail, via
-`attestationKeyBinding`. That last check is the one that stops a genuine chain
-being stapled onto someone else's package, and it is unit-tested.
+**The prediction in the row above was wrong, and the real result is the more
+interesting one.** A `google_apis_playstore` x86_64 AVD (android-36.1) does not
+skip attestation — `KeyGenParameterSpec.setAttestationChallenge` still returns a
+3-certificate chain. What the emulator cannot do is back it with hardware:
+decoding the pulled chain shows
 
-Note the emulator image here is `google_apis_playstore` **x86_64**, which has no
-hardware-backed keymaster, so it exercises exactly the "cannot attest" path.
+```
+leaf   CN=Android Keystore Key            issuer: O=TEE, CN=2c9f81f3...
+TEE    O=TEE, CN=2c9f81f3...              issuer: CN=Droid Unregistered Device CA, O=Google Test LLC
+root   CN=Droid Unregistered Device CA, O=Google Test LLC   (self-signed)
+```
+
+— a self-signed **"Droid Unregistered Device CA / Google Test LLC"** root, which
+is not one of the two production roots pinned in
+`backend/data/google-attestation-roots.pem`. This is exactly the case ADR-0004's
+original correction paragraph names: *"a self-issued CA and leaf over an ordinary
+software key produce a chain that links and binds correctly."* It links
+(`attestationChainValid: pass`) and binds (`attestationKeyBinding: pass`), but two
+independent checks catch it anyway:
+
+- `attestationRootTrusted: fail` — the root's raw DER matches neither pinned
+  Google root.
+- `attestationSecurityLevel: fail` — the extension's own `securityLevel` field
+  reads `Software (attestation version 400)`, the device honestly stating the key
+  is not in secure hardware.
+
+Because `attestationSecurityLevel` is a decisive check (`fail` for `Software`, per
+ADR-0004), the overall verdict is **`failed`**, not "verified with an advisory" as
+originally guessed. The full response, from `POST /verify` against the pulled
+capture:
+
+```
+schemaValid pass · mediaHashMatch pass · metadataHashMatch pass · merkleRootMatch pass
+signatureValid pass · attestationPresent pass · attestationChainValid pass
+attestationKeyBinding pass · attestationRootTrusted fail · attestationNotRevoked pass
+attestationSecurityLevel fail · timestampPlausible pass · locationPlausible unavailable
+verdict: failed
+```
+
+(`locationPlausible: unavailable` is unrelated to attestation — the backend had no
+earlier located event for this fresh install to cross-check against.)
+
+The verdict rules still encode the honest answer for the case the original row
+described (no chain at all, e.g. `attestationCertificateChain: null`): that
+reads `attestationPresent: unavailable` **plus an advisory**, not `fail`
+(ADR-0006 §5) — absence of evidence is not evidence of a defect. This build's
+emulator produces the *stronger* adversarial case — a chain that is present,
+internally consistent, and still correctly rejected — which subsumes the weaker
+one rather than leaving it untested.
+
+### How this was run
+
+`RealityLock_NoAttest` AVD (`system-images;android-36.1;google_apis_playstore;x86_64`,
+Pixel 6 profile), booted headless. Unlike the CPH2591 (ColorOS refuses both
+`adb shell pm grant` and `UiAutomation.grantRuntimePermission` — see above), the
+stock AVD grants CAMERA and location via plain `adb shell pm grant`, so the
+capture was driven the same way `run_e2e.sh` drives the phone: launch
+`MainActivity`, locate the "Capture event" button by its on-screen text via
+`uiautomator dump`, tap it, pull the resulting sidecar and JPEG with
+`run-as`. The pulled package (schema-valid, media/metadata hashes present) was
+posted to a locally running backend's `/verify` exactly as `run_e2e.sh` step 7
+does, producing the response quoted above. Not run through `run_e2e.sh` itself,
+since that script auto-selects the first `adb devices` entry and does not
+distinguish which of two attached devices to drive — a real device and this AVD
+were connected simultaneously.
 
 ---
 
@@ -410,5 +466,6 @@ re-run on hardware" below.)*
   often each rule fires on untouched camera output versus editor-processed
   output, reported as rule behaviour rather than detector accuracy. That needs a
   real labelled corpus, which the project does not have and must not fabricate.
-- Scenario 5's emulator half remains outstanding; the attempt this session failed
-  on host disk space, not on anything about the build.
+- ~~Scenario 5's emulator half remains outstanding~~ — resolved 2026-08-06 once
+  host disk space freed up; see the Scenario 5 section above for the result (a
+  software-backed chain, correctly failed by two independent checks).

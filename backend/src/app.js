@@ -7,6 +7,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 
 const config = require('./config');
+const { createRateLimitStore } = require('./services/rateLimitStore');
 const healthRouter = require('./routes/health');
 const proofRouter = require('./routes/proof');
 const verifyRouter = require('./routes/verify');
@@ -31,12 +32,19 @@ function createApp(overrides = {}) {
   // setting exists to prevent.
   app.set('trust proxy', config.trustProxyHops);
 
-  const limiter = (limit) =>
+  // A store PER limiter, never one shared instance: /health is allowed 600 and
+  // the API 100, so a shared counter would let health-check traffic eat the API
+  // budget. `namespace` is what keeps them apart in Redis; the memory default
+  // gets the same isolation for free by constructing a store per limiter.
+  const limiter = (limit, namespace) =>
     rateLimit({
       windowMs: limits.windowMs,
       limit,
       standardHeaders: 'draft-7',
       legacyHeaders: false,
+      // `undefined` leaves express-rate-limit on its own MemoryStore, which is
+      // the documented default rather than a special case.
+      store: createRateLimitStore(namespace),
       // Matches the app's own error envelope; the library's default is a bare
       // string, which a client parsing JSON would choke on.
       handler: (req, res) => {
@@ -64,8 +72,8 @@ function createApp(overrides = {}) {
   // ONE limiter instance shared by /proof and /verify, not one each: separate
   // instances keep separate counters, which would quietly grant a caller the
   // full allowance twice over.
-  const apiLimiter = limiter(limits.limit);
-  app.use(config.routes.health, limiter(limits.healthLimit), healthRouter);
+  const apiLimiter = limiter(limits.limit, 'api');
+  app.use(config.routes.health, limiter(limits.healthLimit, 'health'), healthRouter);
   app.use(config.routes.proof, apiLimiter, proofRouter);
   app.use(config.routes.verify, apiLimiter, verifyRouter);
 

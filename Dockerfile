@@ -28,9 +28,23 @@ RUN cd backend && npm ci --omit=dev
 COPY backend/src ./backend/src
 COPY backend/scripts ./backend/scripts
 COPY docs/design ./docs/design
+# The pinned Google attestation roots. Omitting this line is not a degraded
+# mode: `loadRoots()` fails fast, so the container exits non-zero on boot and the
+# deploy fails outright — which is exactly what happened on Render 2026-08-06
+# ("ENOENT: /app/backend/data/google-attestation-roots.pem", exit status 1).
+#
+# That outage had TWO independent causes, and either alone reproduces it: the
+# `*.pem` rule in .gitignore kept the file out of the repository, and this COPY
+# was missing so it would not have reached the image even once committed. Both
+# are fixed; the guard below is what stops a third variant getting this far.
+COPY backend/data ./backend/data
 
 # Fail the build if the schema cannot be compiled, rather than at first request.
 RUN node backend/scripts/validate-schema.js
+# Same reasoning for the trust anchors: prove they load while the image is being
+# built, where the error is attached to a build log a human is already reading,
+# instead of at container start where it surfaces as a crash-looping deploy.
+RUN node -e "require('/app/backend/src/services/attestationRoots').loadRoots()"
 
 # The store's data directory, created and owned by the `node` user up front.
 # COPY leaves files root-owned by default, and USER node below then has no
