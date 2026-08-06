@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.windowInsetsPadding
+import com.realitylock.app.ui.common.chromeInsets
+import com.realitylock.app.ui.common.scrollableBottomInset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -101,7 +105,20 @@ fun CaptureScreen(
         onDispose { viewModel.onScreenInactive() }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            // Title and tab row are fixed chrome, so they take the top and both
+            // side insets as ordinary padding — there is nothing to scroll under
+            // a status bar. The BOTTOM inset is deliberately not taken here: it
+            // belongs to whichever scrollable is on screen, which applies it as
+            // content padding so the last item can be scrolled clear of the
+            // navigation bar. Taking it here would reserve a permanent dead
+            // strip and reintroduce the bug. See ui/common/WindowInsetsSupport.
+            // `windowInsetsPadding` consumes what it applies, so the tabs below
+            // see only the bottom inset remaining and cannot double-count.
+            .windowInsetsPadding(chromeInsets),
+    ) {
         Text(
             stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineSmall,
@@ -176,7 +193,13 @@ private fun CaptureTab(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            // Applied AFTER verticalScroll, which is what makes it padding on the
+            // scrolled CONTENT rather than on the viewport. The distinction is
+            // the whole fix: padding the viewport would carve out a dead strip
+            // above the navigation bar, while padding the content lets the last
+            // item scroll up until it clears the bar and then stop.
+            .padding(16.dp)
+            .padding(bottom = scrollableBottomInset()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (!hasCameraPermission) {
@@ -422,9 +445,18 @@ private fun HistoryTab(
     }
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier = Modifier.fillMaxSize(),
+        // Was `.padding(16.dp)` on the LazyColumn itself, which shrinks the
+        // viewport: the bottom 16dp never scrolled, and once the navigation-bar
+        // inset was added on top there was no way to bring the last card out
+        // from under the bar. As contentPadding the viewport stays full height
+        // and runs behind the bar, so the final card scrolls fully clear.
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = 16.dp,
+            bottom = 16.dp + scrollableBottomInset(),
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {

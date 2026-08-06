@@ -3,6 +3,7 @@ package com.realitylock.app.ui
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -23,6 +24,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Declared rather than inherited. Targeting SDK 36 means Android 15+
+        // draws this activity behind the system bars whether it asks to or not
+        // (the `windowOptOutEdgeToEdgeEnforcement` escape hatch is gone), so the
+        // choice is only ever between handling insets deliberately and shipping
+        // content stuck under the navigation bar — which is what the CPH2591 was
+        // doing to the last of the capture details. Calling it explicitly also
+        // makes the transparent system-bar scrims a decision in the diff instead
+        // of a platform default that could change again.
+        enableEdgeToEdge()
         val container = (application as RealityLockApplication).container
 
         setContent {

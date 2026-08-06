@@ -1,6 +1,7 @@
 package com.realitylock.app.ui.diagnostics
 
 import androidx.compose.foundation.layout.Arrangement
+import com.realitylock.app.ui.common.scrollableBottomInset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,7 +50,12 @@ fun DeviceStatusScreen(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            // Padding applied after verticalScroll pads the scrolled CONTENT,
+            // not the viewport, so the last row can be scrolled clear of the
+            // navigation bar instead of sitting under it. See
+            // ui/common/WindowInsetsSupport.
+            .padding(16.dp)
+            .padding(bottom = scrollableBottomInset()),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
