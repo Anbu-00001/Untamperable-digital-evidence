@@ -7,6 +7,7 @@ const { sha256Hex } = require('./hashService');
 const plausibility = require('./plausibility');
 const { isAnchoredToPinnedRoot } = require('./attestationRoots');
 const revocation = require('./attestationRevocation');
+const { parseAttestationExtension } = require('./attestationExtension');
 
 /**
  * Cryptographic verification of a proof package (research/02 §8 Step 10).
@@ -201,6 +202,13 @@ function collectAdvisories(pkg, checks, advisories, historyReadFailed = false) {
     );
   }
 
+  if (checks.attestationSecurityLevel === FAIL) {
+    advisories.push(
+      'The device reports this key as Software-protected — by its own attestation the key ' +
+        'does NOT live in secure hardware, whatever the presence of a chain suggests.',
+    );
+  }
+
   if (pkg.metadata.location && pkg.metadata.location.isMock === true) {
     // Signed by the device, so this is the device itself reporting that the
     // position came from a mock provider. Not a tampering finding — a
@@ -315,6 +323,66 @@ function evaluateRevocation(chain, notes) {
   return PASS;
 }
 
+/**
+ * What the leaf's attestation extension says about the key's security level, and
+ * the device's Verified Boot state.
+ *
+ * `fail` when the extension reports **Software**: the device is stating plainly
+ * that this key does not live in secure hardware, while the package carries an
+ * attestation chain that a reader will take as evidence it does. That
+ * contradiction is loud enough to belong in the verdict rather than in an
+ * advisory someone may not read — and because every report carries its per-check
+ * breakdown, a `failed` here is never opaque about which claim broke.
+ *
+ * `unavailable` when the extension is absent or will not parse. A leaf with no
+ * extension is unusual but not evidence of wrongdoing, and a parse failure must
+ * never be able to invent a security level.
+ *
+ * Verified Boot state and the bootloader lock are reported as notes rather than
+ * folded into this outcome: they describe the OS the device was running, not
+ * where the key lives, and a genuine capture from an unlocked device is still a
+ * genuine capture.
+ */
+function evaluateSecurityLevel(leaf, notes) {
+  let description;
+  try {
+    description = parseAttestationExtension(leaf.raw);
+  } catch (err) {
+    notes.push(`attestation extension could not be parsed: ${err.message}`);
+    return UNAVAILABLE;
+  }
+
+  if (!description) {
+    notes.push('the leaf certificate carries no key attestation extension');
+    return UNAVAILABLE;
+  }
+
+  notes.push(
+    `attested security level: ${description.securityLevel} ` +
+      `(attestation version ${description.attestationVersion})`,
+  );
+
+  if (description.verifiedBootState !== null) {
+    notes.push(
+      `verified boot state: ${description.verifiedBootState}, ` +
+        `bootloader ${description.deviceLocked ? 'locked' : 'UNLOCKED'}`,
+    );
+  } else {
+    notes.push('the attestation extension carries no rootOfTrust, so boot state is unknown');
+  }
+
+  if (description.securityLevelValue === 0) {
+    notes.push(
+      'the device reports this key as Software-protected: it does NOT live in secure hardware',
+    );
+    return FAIL;
+  }
+  // Anything the build does not recognise is not assumed good.
+  return description.securityLevelValue === 1 || description.securityLevelValue === 2
+    ? PASS
+    : UNAVAILABLE;
+}
+
 function verifyAttestationChain(pkg, signingKeyDer, notes) {
   const chainBase64 = pkg.signature.attestationCertificateChain;
   if (!chainBase64 || chainBase64.length === 0) {
@@ -331,6 +399,7 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
       attestationKeyBinding: UNAVAILABLE,
       attestationRootTrusted: UNAVAILABLE,
       attestationNotRevoked: UNAVAILABLE,
+      attestationSecurityLevel: UNAVAILABLE,
     };
   }
 
@@ -345,6 +414,7 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
       attestationChainValid: FAIL,
       attestationKeyBinding: UNAVAILABLE,
       attestationNotRevoked: UNAVAILABLE,
+      attestationSecurityLevel: UNAVAILABLE,
     };
   }
 
@@ -363,6 +433,7 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
       attestationChainValid: FAIL,
       attestationKeyBinding: UNAVAILABLE,
       attestationNotRevoked: UNAVAILABLE,
+      attestationSecurityLevel: UNAVAILABLE,
     };
   }
 
@@ -410,6 +481,9 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
   // carries CA_COMPROMISE entries, and a compromised intermediate invalidates
   // everything beneath it however clean the leaf looks.
   result.attestationNotRevoked = evaluateRevocation(chain, notes);
+
+  // The extension itself — what the key actually claims about where it lives.
+  result.attestationSecurityLevel = evaluateSecurityLevel(chain[0], notes);
 
   if (signingKeyDer) {
     const leafKeyDer = chain[0].publicKey.export({ type: 'spki', format: 'der' });

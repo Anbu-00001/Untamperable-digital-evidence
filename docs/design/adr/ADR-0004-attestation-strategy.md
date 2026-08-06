@@ -109,11 +109,63 @@ zeros, and decimal). Verified against the live list: a hex-keyed entry
 report as `5CB838F1FE157A85`) are both found, each returning `KEY_COMPROMISE`.
 The project's own device certificates appear on neither.
 
-**Still not done, and still claimed nowhere:**
+### The attestation extension — implemented 2026-08-03
 
-- **The attestation extension** (OID `1.3.6.1.4.1.11129.2.1.17`) is not parsed,
-  so `securityLevel` and `verifiedBootState` remain unverified — the device's
-  claim of TrustedEnvironment or StrongBox is taken on trust.
+`attestationSecurityLevel` parses the KeyDescription in the leaf certificate
+(OID `1.3.6.1.4.1.11129.2.1.17`), so the device's claimed security level is read
+rather than assumed. `pass` for TrustedEnvironment or StrongBox, **`fail` for
+Software** — the device stating plainly that the key does not live in secure
+hardware, while carrying a chain a reader will take as evidence that it does.
+`unavailable` when the extension is absent or will not parse.
+
+Verified Boot state, the bootloader lock and the attestation version are parsed
+and reported in the notes but deliberately **do not gate the verdict**: they
+describe the OS the device was running, not where the key lives, and a genuine
+capture from an unlocked device is still a genuine capture.
+
+#### Why the DER parser is hand-written
+
+Node's `crypto.X509Certificate` has no accessor for a custom extension, so the
+options were an ASN.1 dependency or a small parser. The dependency was rejected —
+this same phase had to back out `opentimestamps` for pulling two unfixable
+critical CVEs, and one fixed, well-documented structure is a poor reason to widen
+the supply chain of the service that verifies evidence.
+
+The parser is bounds-checked on every read, depth-limited, rejects indefinite
+lengths (not valid DER) and unterminated high-tag-number forms, and **throws on
+anything malformed** so the caller reports `unavailable`. A fabricated
+"StrongBox" would be far worse than no answer. Ten tests cover this, most of them
+asserting a refusal.
+
+Two details worth recording because they are easy to get wrong:
+
+- `rootOfTrust` is `[704] EXPLICIT`, well above the 30 that the short tag form
+  holds, so the high-tag-number form is mandatory — `BF 85 40`.
+- It is read **only** from `hardwareEnforced`. The same tag can appear in
+  `softwareEnforced`, where it is whatever the OS asserted — exactly the claim a
+  compromised OS would forge.
+
+Verified on the real device: the parser returns `attestationVersion 300`,
+`securityLevel TrustedEnvironment`, `deviceLocked true`, `verifiedBootState
+Verified`, matching `openssl asn1parse` field for field.
+
+### Attestation status, complete
+
+All six checks now run, and a package captured on the project's device passes
+every one:
+
+```
+attestationPresent pass · attestationChainValid pass · attestationKeyBinding pass
+attestationRootTrusted pass · attestationNotRevoked pass · attestationSecurityLevel pass
+notes: attested security level: TrustedEnvironment (attestation version 300)
+       verified boot state: Verified, bootloader locked
+```
+
+The original correction at the top of this section — "no root anchoring is
+implemented, and no root set is fetched or consulted anywhere" — is now fully
+superseded. What remains unproven is stated in `verdictLimitations` and nowhere
+contradicted: revocation reports `unavailable` rather than `pass` when the list
+cannot be fetched, and boot state does not gate the verdict.
 
 The shipped `verdictLimitations` says exactly this, so no consumer of a verdict is
 told more than the above supports.

@@ -163,16 +163,19 @@ const config = {
     // the chain "is not checked against Google's published roots" — true at the
     // time, and false since Phase 8, which pins those roots and checks them.
     //
-    // Revocation joined the checks after this, so the wording moved again. What
-    // is still NOT verified is the attestation extension itself: the device's
-    // claimed security level — TrustedEnvironment vs StrongBox — and its
-    // Verified Boot state are taken on trust.
+    // This line has moved three times as the attestation checks were built out,
+    // which is the point of keeping the history: each version was true when
+    // written and became an overclaim or an underclaim as the code changed.
     //
     // `attestationNotRevoked` is named rather than assumed because it fails
     // OPEN: with no status list, a revoked certificate looks exactly like a
     // clean one, so its `unavailable` has to be read, not skipped.
-    'Hardware backing is supported only when `attestationRootTrusted` and `attestationNotRevoked` both pass — read them; revocation reports `unavailable` when the list could not be fetched, which is not the same as a clean result.',
-    'Even then it is partial: the attestation extension is not parsed, so the device’s claimed security level (TrustedEnvironment vs StrongBox) and Verified Boot state are not verified.',
+    'Hardware backing is supported only when `attestationRootTrusted`, `attestationNotRevoked` and `attestationSecurityLevel` all pass — read them; revocation reports `unavailable` when the list could not be fetched, which is not the same as a clean result.',
+    // Boot state is parsed and reported in the notes, but deliberately does not
+    // gate the verdict: an unlocked bootloader describes the OS the device was
+    // running, not where the key lives, and a genuine capture from such a device
+    // is still a genuine capture. A reader who cares must read the note.
+    'The device’s Verified Boot state and bootloader lock are reported in the notes but do NOT affect the verdict; a capture from a device with an unlocked bootloader can still verify.',
     'Does NOT prove the depicted event was real, unstaged, or correctly described.',
     'Not a standalone legal certificate; BSA 2023 s.63 requires human certification.',
   ],
