@@ -170,6 +170,63 @@
     <string name="certificate_framing_3">It is NOT a standalone legal certificate. Under the Bharatiya Sakshya Adhiniyam 2023 s.63, electronic evidence requires certification by a person; this document is generated automatically and requires human countersignature to be produced as evidence.</string>
     <string name="certificate_framing_4">Location is shown to three decimal places (~100 m). The exact coordinate remains in the proof package.</string>
 
+    <!-- Bystander notice, shown under the live preview whenever the camera is
+         bound. research/06 §3.2 asks for an affordance aimed at people captured
+         incidentally: under the DPDP Act 2023 a bystander whose face and
+         location are recorded is plausibly a Data Principal too, and is the one
+         party who never saw a consent screen. Deliberately not dismissible. -->
+    <string name="capture_bystander_notice">This device is recording a tamper-evident record: photo, location and time.</string>
+
+    <!-- ============ BSA 2023 s.63 statutory annexure (Phase 7) ============
+         A SEPARATE document from the certificate above, and deliberately so.
+         The certificate reports what this system computed. This is a DRAFT FORM
+         whose load-bearing content is what a person adds to it.
+
+         Every statement below is drawn from research/06 §1.2-§1.3, not
+         paraphrased from memory: s.63(4) requires dual certification (device
+         custodian + independent expert), the Schedule requires the hash value
+         and algorithm, the certificate must originate from whoever CONTROLS the
+         device, and it must speak to matters this system cannot know — that the
+         device "was operating properly", that information was fed "in the
+         ordinary course of activity", and chain-of-custody after the file leaves
+         the phone.
+
+         This is not legal advice and the app must never imply it is; research/06
+         opens with that same caveat. -->
+    <string name="annexure_action">s.63 annexure</string>
+    <string name="annexure_generating">Building annexure…</string>
+    <string name="annexure_title">Draft Technical Annexure — Bharatiya Sakshya Adhiniyam 2023, s.63</string>
+    <string name="annexure_saved">Draft annexure saved.</string>
+    <string name="annexure_save_failed">Could not save the annexure: %1$s</string>
+    <string name="annexure_draft_notice">DRAFT — NOT A CERTIFICATE. This document is generated automatically by software and has no legal force as produced. Under BSA 2023 s.63(4) a certificate must be signed by a natural person in a responsible position in relation to the device, and additionally by an independent expert. This annexure supplies the technical particulars such a certifier would reference; it does not, and cannot, certify anything itself.</string>
+
+    <!-- Method of production. Describes what the software actually does, in the
+         order it does it — not an idealised account. -->
+    <string name="annexure_method_1">The image was captured by the Reality Lock application directly from the device camera. The application provides no path for importing an existing image from storage or the gallery.</string>
+    <string name="annexure_method_2">Location, timestamp, motion-sensor and device metadata were recorded at the moment of capture and canonicalised using JSON Canonicalization Scheme (RFC 8785).</string>
+    <string name="annexure_method_3">SHA-256 digests were computed over the image bytes and over the canonicalised metadata, and combined into a two-leaf Merkle root. This root is the hash value stated above.</string>
+    <string name="annexure_method_4">The Merkle root was signed with an ECDSA P-256 key generated inside the device keystore and marked non-exportable, so the private key cannot be read out of the device by any application, including this one.</string>
+    <string name="annexure_method_5">Where the device supports it, a hardware key-attestation certificate chain was recorded alongside the signature, evidencing that the signing key resides in the device secure hardware.</string>
+
+    <!-- Matters the SIGNATORIES must attest to, because the system cannot.
+         Each maps to a specific limitation identified in research/06 §1.3. -->
+    <string name="annexure_attest_1">That the device was operating properly throughout the relevant period, in the sense required by the statute; the application records its own operation but cannot attest to the condition of the device as a whole.</string>
+    <string name="annexure_attest_2">That the information was fed into the device in the ordinary course of activity.</string>
+    <string name="annexure_attest_3">That the signatory occupies a responsible position in relation to the operation of the device or the management of the relevant activities.</string>
+    <string name="annexure_attest_4">Chain of custody after the record left the device — how it was transferred, stored, and produced — none of which the application observes.</string>
+    <string name="annexure_attest_5">That the scene depicted is what it is asserted to be. The cryptographic record establishes that the image is unaltered since capture; it says nothing about whether the subject was staged, or about the truth of any description attached to it.</string>
+
+    <string name="annexure_signatory_custodian_role">1. Person in charge of the device (device custodian)</string>
+    <string name="annexure_signatory_custodian_basis">Required by BSA 2023 s.63(4). Courts require the certificate to originate from whoever controls the device, not from a third-party application vendor.</string>
+    <string name="annexure_signatory_expert_role">2. Independent expert</string>
+    <string name="annexure_signatory_expert_basis">Required by BSA 2023 s.63(4), which introduced mandatory dual certification. This signatory must be independent of the device custodian.</string>
+
+    <string name="annexure_label_make">Make</string>
+    <string name="annexure_label_model">Model</string>
+    <string name="annexure_label_platform">Android API level</string>
+    <string name="annexure_label_install_id">Application install identifier</string>
+    <string name="annexure_label_software">Application version</string>
+
     <!-- ==================== Shared ==================== -->
     <string name="common_yes">Yes</string>
     <string name="common_no">No</string>

@@ -60,4 +60,26 @@ object CertificateConfig {
 
     /** How much of the event id goes in the filename — enough to be unique here. */
     const val FILENAME_EVENT_ID_CHARS: Int = 8
+
+    // ---- Statutory annexure (BSA 2023 s.63) --------------------------------
+    // A separate document from the certificate above, and separately named: the
+    // two must never be confused in a case file, because one is this system's
+    // own output and the other is a form a person signs.
+
+    const val ANNEXURE_FILENAME_PREFIX: String = "reality-lock-s63-annexure-"
+
+    /**
+     * Vertical space reserved for one signatory's block.
+     *
+     * A block must never be split across a page boundary. A "Signature" rule
+     * stranded at the top of page 3, with the role it belongs to left on page 2,
+     * is not a cosmetic problem on a document whose entire purpose is recording
+     * who attested to what.
+     */
+    const val SIGNATURE_BLOCK_HEIGHT_POINTS: Float = 96f
+
+    /** Length of a blank rule a person writes on, in points. */
+    const val SIGNATURE_RULE_WIDTH_POINTS: Float = 210f
+
+    const val SIGNATURE_RULE_STROKE_WIDTH: Float = 0.7f
 }

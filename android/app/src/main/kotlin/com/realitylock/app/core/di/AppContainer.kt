@@ -11,6 +11,7 @@ import com.realitylock.app.forensics.ForensicAnalyzer
 import com.realitylock.app.capture.store.EventRepository
 import com.realitylock.app.capture.store.FileEventRepository
 import com.realitylock.app.certificate.CertificateRenderer
+import com.realitylock.app.certificate.StatutoryAnnexureRenderer
 import com.realitylock.app.core.config.AppConfig
 import com.realitylock.app.core.config.CaptureConfig
 import com.realitylock.app.core.config.SyncConfig
@@ -89,6 +90,12 @@ class AppContainer(context: Context) {
     val verificationClient = VerificationClient(httpClient, AppConfig.backendBaseUrl)
 
     val certificateRenderer = CertificateRenderer()
+
+    // A distinct renderer, not a mode of the one above: the two documents make
+    // opposite claims (see StatutoryAnnexureRenderer's header), and merging them
+    // would invite a single PDF that reads as though this system certified
+    // something under BSA 2023 s.63 — which it cannot do.
+    val statutoryAnnexureRenderer = StatutoryAnnexureRenderer()
 
     /**
      * Requests a background sync pass.

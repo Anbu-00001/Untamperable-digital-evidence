@@ -49,6 +49,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.realitylock.app.R
 import com.realitylock.app.capture.LocationSource
 import com.realitylock.app.capture.model.CapturedEvent
+import com.realitylock.app.certificate.SignatoryBlock
+import com.realitylock.app.certificate.StatutoryAnnexureContent
 import com.realitylock.app.core.config.CertificateConfig
 import com.realitylock.app.sync.SyncStage
 import com.realitylock.app.sync.SyncState
@@ -197,6 +199,26 @@ private fun CaptureTab(
                 .aspectRatio(PREVIEW_ASPECT_RATIO),
         )
 
+        // Bystander notice, directly beneath the live preview.
+        //
+        // research/06 §3.2 recommends "a separate, additional notice/consent
+        // affordance aimed at bystanders captured incidentally in frame — e.g. a
+        // visible on-screen indicator during capture". Under the DPDP Act 2023 a
+        // bystander whose face and location are recorded is plausibly a Data
+        // Principal in their own right, and they are the one party to a capture
+        // who never agreed to anything and cannot see a consent screen.
+        //
+        // Placed under the preview rather than over it on purpose: an overlay
+        // would sit on the framing the user is composing, and a notice that gets
+        // in the way is a notice people learn to switch off. It is always shown
+        // — there is no dismiss — because it is addressed to someone other than
+        // the person holding the phone.
+        Text(
+            stringResource(R.string.capture_bystander_notice),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
         if (!hasLocationPermission) {
             Text(
                 stringResource(R.string.capture_location_denied_warning),
@@ -334,6 +356,46 @@ private fun HistoryTab(
     val notVerifiedLabel = stringResource(R.string.certificate_verdict_not_verified)
     val checksAbsentNotice = stringResource(R.string.certificate_checks_absent)
 
+    // Annexure prose, resolved here for the same reason the certificate's is: it
+    // is translatable, user-facing text, and a ViewModel has no Context to
+    // resolve resources with.
+    val annexureTitle = stringResource(R.string.annexure_title)
+    val annexureDraftNotice = stringResource(R.string.annexure_draft_notice)
+    val annexureLabels = StatutoryAnnexureContent.DeviceParticularLabels(
+        make = stringResource(R.string.annexure_label_make),
+        model = stringResource(R.string.annexure_label_model),
+        platform = stringResource(R.string.annexure_label_platform),
+        installId = stringResource(R.string.annexure_label_install_id),
+        software = stringResource(R.string.annexure_label_software),
+    )
+    val annexureMethod = listOf(
+        stringResource(R.string.annexure_method_1),
+        stringResource(R.string.annexure_method_2),
+        stringResource(R.string.annexure_method_3),
+        stringResource(R.string.annexure_method_4),
+        stringResource(R.string.annexure_method_5),
+    )
+    val annexureMatters = listOf(
+        stringResource(R.string.annexure_attest_1),
+        stringResource(R.string.annexure_attest_2),
+        stringResource(R.string.annexure_attest_3),
+        stringResource(R.string.annexure_attest_4),
+        stringResource(R.string.annexure_attest_5),
+    )
+    // Two blocks, because s.63(4) requires two signatories. The content class
+    // refuses fewer; listing them here rather than defaulting inside the model
+    // keeps the legal basis of each one in translatable text.
+    val annexureSignatories = listOf(
+        SignatoryBlock(
+            role = stringResource(R.string.annexure_signatory_custodian_role),
+            basis = stringResource(R.string.annexure_signatory_custodian_basis),
+        ),
+        SignatoryBlock(
+            role = stringResource(R.string.annexure_signatory_expert_role),
+            basis = stringResource(R.string.annexure_signatory_expert_basis),
+        ),
+    )
+
     // The system "save as" dialog. Nothing is written to storage unless the user
     // chooses a destination — no storage permission is involved on any API level.
     val context = LocalContext.current
@@ -414,6 +476,17 @@ private fun HistoryTab(
                             checkLabeller = { it },
                         )
                     },
+                    onExportAnnexure = {
+                        proofsViewModel.buildStatutoryAnnexure(
+                            eventId = event.eventId,
+                            title = annexureTitle,
+                            draftNotice = annexureDraftNotice,
+                            labels = annexureLabels,
+                            productionMethod = annexureMethod,
+                            mattersRequiringHumanAttestation = annexureMatters,
+                            signatories = annexureSignatories,
+                        )
+                    },
                 )
 
                 // The result sits directly beneath the event it describes, so a
@@ -483,6 +556,7 @@ private fun EventCard(
     onVerify: (() -> Unit)? = null,
     onRetrySync: (() -> Unit)? = null,
     onExportCertificate: (() -> Unit)? = null,
+    onExportAnnexure: (() -> Unit)? = null,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -604,6 +678,24 @@ private fun EventCard(
                                     R.string.certificate_generating
                                 } else {
                                     R.string.certificate_action
+                                },
+                            ),
+                        )
+                    }
+                }
+                // A separate action, never a variant of the one above. The
+                // certificate reports what this system computed; the annexure is
+                // a draft form a person completes and signs. One button emitting
+                // both, or a toggle between them, would blur exactly the line
+                // BSA 2023 s.63 draws (research/06 §1.3).
+                onExportAnnexure?.let {
+                    TextButton(onClick = it, enabled = !isBuildingCertificate) {
+                        Text(
+                            stringResource(
+                                if (isBuildingCertificate) {
+                                    R.string.annexure_generating
+                                } else {
+                                    R.string.annexure_action
                                 },
                             ),
                         )

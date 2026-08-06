@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.realitylock.app.certificate.CertificateContent
+import com.realitylock.app.certificate.SignatoryBlock
+import com.realitylock.app.certificate.StatutoryAnnexureContent
 import com.realitylock.app.core.config.CertificateConfig
 import com.realitylock.app.core.di.AppContainer
 import com.realitylock.app.core.time.ClockCorrelator
@@ -194,6 +196,78 @@ class ProofsViewModel(
                         eventId = eventId,
                         bytes = container.certificateRenderer.render(content),
                         fileName = CertificateConfig.FILENAME_PREFIX +
+                            eventId.take(CertificateConfig.FILENAME_EVENT_ID_CHARS) +
+                            CertificateConfig.FILENAME_EXTENSION,
+                    )
+                }
+            }
+
+            _uiState.update {
+                outcome.fold(
+                    onSuccess = { pending ->
+                        it.copy(buildingCertificateFor = null, pendingCertificate = pending)
+                    },
+                    onFailure = { error ->
+                        it.copy(
+                            buildingCertificateFor = null,
+                            certificateError = error.message ?: error.javaClass.simpleName,
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * Renders the BSA 2023 s.63 draft annexure and holds it for the save dialog,
+     * exactly as [buildCertificate] does for the certificate.
+     *
+     * Note what is NOT passed in: any report, verdict or check outcome. The
+     * annexure is a statutory form about the record's particulars — hash value,
+     * algorithm, device, method of production — and a verification verdict is not
+     * one of them. Printing "VERIFIED" onto a document a person is about to sign
+     * would invite them to adopt this system's conclusion as their own
+     * certification, which is the precise confusion research/06 §1.3 warns
+     * against.
+     *
+     * @param labels the device-particulars column headings.
+     * @param productionMethod how the record was produced, in order.
+     * @param mattersRequiringHumanAttestation what the signatories, not this
+     *        system, must attest to. Non-empty by construction.
+     * @param signatories blank blocks; never populated by this app.
+     */
+    fun buildStatutoryAnnexure(
+        eventId: String,
+        title: String,
+        draftNotice: String,
+        labels: StatutoryAnnexureContent.DeviceParticularLabels,
+        productionMethod: List<String>,
+        mattersRequiringHumanAttestation: List<String>,
+        signatories: List<SignatoryBlock>,
+    ) {
+        _uiState.update { it.copy(buildingCertificateFor = eventId, certificateError = null) }
+
+        viewModelScope.launch {
+            val outcome = withContext(ioDispatcher) {
+                runCatching {
+                    val event = repository.findById(eventId)
+                        ?: error(ERROR_EVENT_MISSING)
+                    val content = StatutoryAnnexureContent.from(
+                        event = event,
+                        title = title,
+                        draftNotice = draftNotice,
+                        deviceParticularLabels = labels,
+                        productionMethod = productionMethod,
+                        mattersRequiringHumanAttestation = mattersRequiringHumanAttestation,
+                        signatories = signatories,
+                        generatedAtIso = ClockCorrelator.toIso8601Utc(System.currentTimeMillis()),
+                    )
+                    PendingCertificate(
+                        eventId = eventId,
+                        bytes = container.statutoryAnnexureRenderer.render(content),
+                        // A distinct filename stem, so the two documents cannot be
+                        // mistaken for each other in a case file.
+                        fileName = CertificateConfig.ANNEXURE_FILENAME_PREFIX +
                             eventId.take(CertificateConfig.FILENAME_EVENT_ID_CHARS) +
                             CertificateConfig.FILENAME_EXTENSION,
                     )
