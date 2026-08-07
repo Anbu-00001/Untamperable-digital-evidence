@@ -79,6 +79,7 @@ tink = "1.19.0"                     # Google Tink (safe crypto primitives)
 playIntegrity = "1.6.0"             # Play Integrity API (successor to the dead SafetyNet)
 jsonCanonicalization = "1.1"        # io.github.erdtman — RFC 8785 JCS canonical JSON
 exifInterface = "1.4.2"             # androidx.exifinterface — EXIF forensic checks (Phase 4)
+documentFile = "1.1.0"              # androidx.documentfile — SAF tree access for durable backup
 
 # --- Verification UI (Phase 5) ---
 # zxing CORE only, not journeyapps/zxing-android-embedded (ADR-0006 §4).
@@ -162,6 +163,7 @@ tink-android = { group = "com.google.crypto.tink", name = "tink-android", versio
 play-integrity = { group = "com.google.android.play", name = "integrity", version.ref = "playIntegrity" }
 json-canonicalization = { group = "io.github.erdtman", name = "java-json-canonicalization", version.ref = "jsonCanonicalization" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifInterface" }
+androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentFile" }
 
 # --- Verification UI ---
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }

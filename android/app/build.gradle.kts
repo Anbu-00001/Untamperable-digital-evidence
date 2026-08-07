@@ -227,6 +227,12 @@ dependencies {
     // EXIF-consistency forensic checks on candidate images (Phase 4).
     implementation(libs.androidx.exifinterface)
 
+    // Storage Access Framework tree access, for the durable backup destination.
+    // The app's own filesDir copy dies with an uninstall or a "clear data" tap —
+    // so a second copy is only a backup if it lives somewhere the app does not
+    // own, which since scoped storage means a tree the user explicitly picked.
+    implementation(libs.androidx.documentfile)
+
     // ---- Networking (Phase 5) ----
     // OkHttp alone, no Retrofit and no JSON converter. The proof package is a
     // signed document: it is forwarded as the exact bytes that were stored, never

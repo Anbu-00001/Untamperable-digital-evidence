@@ -14,6 +14,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.realitylock.app.RealityLockApplication
 import com.realitylock.app.ui.analyze.AnalyzeViewModel
 import com.realitylock.app.ui.capture.CaptureScreen
+import com.realitylock.app.ui.backup.BackupViewModel
 import com.realitylock.app.ui.capture.CaptureViewModel
 import com.realitylock.app.ui.verify.ProofsViewModel
 
@@ -58,10 +59,13 @@ class MainActivity : ComponentActivity() {
                         viewModel(factory = AnalyzeViewModel.Factory(container))
                     val proofsViewModel: ProofsViewModel =
                         viewModel(factory = ProofsViewModel.Factory(container))
+                    val backupViewModel: BackupViewModel =
+                        viewModel(factory = BackupViewModel.Factory(container))
                     CaptureScreen(
                         viewModel = captureViewModel,
                         analyzeViewModel = analyzeViewModel,
                         proofsViewModel = proofsViewModel,
+                        backupViewModel = backupViewModel,
                     )
                 }
             }

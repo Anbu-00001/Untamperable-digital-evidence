@@ -33,6 +33,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.realitylock.app.R
 import com.realitylock.app.forensics.ExifAnalyzer
+import com.realitylock.app.forensics.ProofLookup
+import com.realitylock.app.ui.theme.RealityLockThemeTokens
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 
 /**
  * "Explainable Authenticity Heuristic" screen: the user picks a candidate image
@@ -62,8 +68,6 @@ fun AnalyzeScreen(viewModel: AnalyzeViewModel, modifier: Modifier = Modifier) {
             .padding(bottom = scrollableBottomInset()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        DisclaimerCard()
-
         Button(
             onClick = { picker.launch("image/*") },
             enabled = !state.analyzing,
@@ -71,6 +75,10 @@ fun AnalyzeScreen(viewModel: AnalyzeViewModel, modifier: Modifier = Modifier) {
         ) {
             Text(stringResource(R.string.analyze_pick_image))
         }
+
+        // The headline answer, above everything else. It arrives before the
+        // heuristics finish and stays on screen even if they fail.
+        state.proof?.let { ProofVerdictCard(it) }
 
         when {
             state.analyzing -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -84,7 +92,14 @@ fun AnalyzeScreen(viewModel: AnalyzeViewModel, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.error,
             )
 
-            state.report != null -> ReportView(state.report!!)
+            state.report != null -> {
+                // The disclaimer sits here, immediately above the heuristics it
+                // qualifies, rather than at the top of the screen. It used to be
+                // first because ELA was first; now the definite answer leads and
+                // the caveat belongs with the thing being caveated.
+                DisclaimerCard()
+                ReportView(state.report!!)
+            }
         }
     }
 }
@@ -190,4 +205,85 @@ private fun exifFindingText(finding: ExifAnalyzer.Finding): String = when (findi
         stringResource(R.string.analyze_flag_no_exif)
     ExifAnalyzer.Finding.Code.GPS_PRESENT ->
         stringResource(R.string.analyze_flag_gps)
+}
+
+/**
+ * The answer this screen leads with.
+ *
+ * ## Why the wording is what it is
+ *
+ * The common outcome is [ProofLookup.Result.NoProof], and it is very easy to
+ * write that in a way that sounds like an accusation. "Not verified" and
+ * "unverified image" both read, to someone anxious about a photo, as "this is
+ * probably fake". The screen is required to avoid that: ADR-0005 and ADR-0006 §5
+ * both turn on absence of evidence not being evidence of a defect.
+ *
+ * So the no-proof case states a fact about *this app* — no capture of ours has
+ * these bytes — and then says the useful thing out loud: nothing here suggests
+ * the image is fake, and no software can tell you whether a photograph is
+ * genuine from the file alone.
+ *
+ * The match case is the opposite problem. It is a strong claim and must be kept
+ * exact: the bytes are unchanged since capture, and that is all. A capture
+ * stored before signing completed reports separately, because calling it proven
+ * would be the same overclaim the verifier refuses.
+ */
+@Composable
+private fun ProofVerdictCard(result: ProofLookup.Result) {
+    val colors = RealityLockThemeTokens.colors
+
+    val (accent, title, body) = when (result) {
+        is ProofLookup.Result.Matched ->
+            if (result.signed) {
+                Triple(
+                    colors.pass,
+                    "This is a Reality Lock capture",
+                    "These bytes match capture ${result.event.eventId.take(8)}, recorded " +
+                        "${result.event.metadata.timestamp.iso8601}. The image is " +
+                        "unchanged since it was captured and signed. Open it in History " +
+                        "to check the full proof.",
+                )
+            } else {
+                Triple(
+                    colors.warn,
+                    "A capture of ours, but not signed",
+                    "These bytes match capture ${result.event.eventId.take(8)}, but that " +
+                        "capture carries no signature, so there is nothing to verify it " +
+                        "against.",
+                )
+            }
+
+        ProofLookup.Result.NoProof -> Triple(
+            colors.neutral,
+            "No Reality Lock proof for this image",
+            "This app did not capture this image, so it cannot vouch for where or " +
+                "when it came from. That is not a sign the image is fake — it is the " +
+                "normal result for any photo taken with another app. Nothing below " +
+                "can tell you whether a photograph is genuine.",
+        )
+
+        is ProofLookup.Result.Unreadable -> Triple(
+            colors.unavailable,
+            "Could not check this image",
+            "${result.reason}. The check did not run, which is different from it " +
+                "finding nothing.",
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.surface)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = accent,
+        )
+        Text(body, style = MaterialTheme.typography.bodySmall, color = colors.inkMuted)
+    }
 }

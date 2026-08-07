@@ -8,11 +8,21 @@ import com.realitylock.app.capture.LocationSource
 import com.realitylock.app.capture.MediaFileStore
 import com.realitylock.app.capture.SensorSnapshotCollector
 import com.realitylock.app.forensics.ForensicAnalyzer
+import com.realitylock.app.forensics.ProofLookup
 import com.realitylock.app.capture.store.EventRepository
 import com.realitylock.app.capture.store.FileEventRepository
 import com.realitylock.app.certificate.CertificateRenderer
 import com.realitylock.app.certificate.StatutoryAnnexureRenderer
+import com.realitylock.app.export.EvidenceBundle
 import com.realitylock.app.export.EvidenceBundleExporter
+import com.realitylock.app.backup.BackupConfig
+import com.realitylock.app.backup.BackupDestination
+import com.realitylock.app.backup.BackupFailure
+import com.realitylock.app.backup.BackupStateStore
+import com.realitylock.app.backup.EvidenceBackupEngine
+import com.realitylock.app.backup.EvidenceBundleSource
+import com.realitylock.app.backup.SafBackupTarget
+import com.realitylock.app.BuildConfig
 import com.realitylock.app.core.config.AppConfig
 import com.realitylock.app.core.config.CaptureConfig
 import com.realitylock.app.core.config.SyncConfig
@@ -105,6 +115,52 @@ class AppContainer(context: Context) {
     // else could reach them either.
     val evidenceBundleExporter = EvidenceBundleExporter()
 
+    // ---- Durable backup --------------------------------------------------
+    // A second copy of each capture in a folder the user nominated. The internal
+    // copy under filesDir does not survive an uninstall or a "clear data" tap —
+    // which is exactly the action someone under pressure to destroy evidence
+    // would be told to take — so the only copy that is meaningfully a backup is
+    // one the app does not own.
+
+    val backupDestination = BackupDestination(appContext)
+
+    val backupStateStore =
+        BackupStateStore(File(appContext.filesDir, BackupConfig.STATE_SUBDIR))
+
+    /**
+     * Supplies the *complete* evidence bundle, never a bare JPEG.
+     *
+     * A loose photo in a backup folder proves nothing and is worse than an empty
+     * one: someone can find it years later, believe it is the evidence, and
+     * present it. Reuses the same exporter the share sheet uses, so a backed-up
+     * bundle and an exported one are byte-identical in structure.
+     */
+    private val evidenceBundleSource = EvidenceBundleSource { eventId ->
+        val event = eventRepository.findById(eventId)
+            ?: error("no stored event $eventId")
+        evidenceBundleExporter.export(
+            EvidenceBundle.from(
+                event = event,
+                // The stored bytes, never a re-serialization — the package was
+                // signed over exactly these.
+                packageBytes = eventRepository.readPackageBytes(eventId),
+                mediaBytes = File(event.mediaFilePath).takeIf { it.isFile }?.readBytes(),
+                exportingAppVersion = BuildConfig.VERSION_NAME,
+                exportedAtIso = ClockCorrelator.toIso8601Utc(System.currentTimeMillis()),
+            ),
+        )
+    }
+
+    val evidenceBackupEngine = EvidenceBackupEngine(
+        stateStore = backupStateStore,
+        destination = object : EvidenceBackupEngine.DestinationStatus {
+            override val destinationId: String? get() = backupDestination.destinationId
+            override fun currentFailure(): BackupFailure? = backupDestination.currentFailure()
+        },
+        target = SafBackupTarget(appContext, backupDestination),
+        bundles = evidenceBundleSource,
+    )
+
     /**
      * Requests a background sync pass.
      *
@@ -119,6 +175,10 @@ class AppContainer(context: Context) {
      */
     fun deleteEvent(eventId: String): Boolean {
         syncStateStore.delete(eventId)
+        // Takes the backed-up copy and its bookkeeping with it. Leaving the ZIP
+        // behind would keep evidence the user asked to delete sitting in a folder
+        // they can see, under a name that says exactly what it is.
+        evidenceBackupEngine.forget(eventId)
         return eventRepository.delete(eventId)
     }
 
@@ -133,6 +193,20 @@ class AppContainer(context: Context) {
      * has no route into the signing pipeline.
      */
     fun createForensicAnalyzer(): ForensicAnalyzer = ForensicAnalyzer(appContext)
+
+    /**
+     * Read-only proof lookup for the Analyze screen.
+     *
+     * Hands over the repository, which the forensic analyzer above deliberately
+     * does not get. The isolation that matters is preserved: this can search
+     * stored events and cannot create, modify or sign one, so an analysed image
+     * still has no route into the signing pipeline.
+     */
+    fun createProofLookup(): ProofLookup = ProofLookup(eventRepository)
+
+    /** Opens a user-picked content URI. Keeps the Context out of the ViewModel. */
+    fun openInputStream(uri: android.net.Uri): java.io.InputStream? =
+        appContext.contentResolver.openInputStream(uri)
 
     fun createCaptureCoordinator(sensors: SensorSnapshotCollector): CaptureCoordinator =
         CaptureCoordinator(

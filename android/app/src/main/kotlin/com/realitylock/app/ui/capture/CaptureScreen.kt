@@ -64,6 +64,7 @@ import com.realitylock.app.core.config.CertificateConfig
 import com.realitylock.app.core.config.EvidenceBundleConfig
 import com.realitylock.app.sync.SyncStage
 import com.realitylock.app.sync.SyncState
+import com.realitylock.app.ui.backup.BackupViewModel
 import com.realitylock.app.ui.analyze.AnalyzeScreen
 import com.realitylock.app.ui.analyze.AnalyzeViewModel
 import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
@@ -87,6 +88,7 @@ fun CaptureScreen(
     viewModel: CaptureViewModel,
     analyzeViewModel: AnalyzeViewModel,
     proofsViewModel: ProofsViewModel,
+    backupViewModel: BackupViewModel,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -181,7 +183,7 @@ fun CaptureScreen(
 
             2 -> AnalyzeScreen(viewModel = analyzeViewModel)
 
-            else -> DeviceStatusScreen()
+            else -> DeviceStatusScreen(backupViewModel = backupViewModel)
         }
     }
 }

@@ -2,7 +2,6 @@ package com.realitylock.app.ui.diagnostics
 
 import android.os.Build
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,8 +29,9 @@ import com.realitylock.app.core.config.ProofPackageConstants
 import com.realitylock.app.core.device.DeviceCapabilities
 import com.realitylock.app.crypto.AttestationProbe
 import com.realitylock.app.crypto.SigningKeyManager
+import com.realitylock.app.ui.backup.BackupSection
+import com.realitylock.app.ui.backup.BackupViewModel
 import com.realitylock.app.ui.common.scrollableBottomInset
-import com.realitylock.app.ui.theme.RealityLockTheme
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,20 +79,21 @@ import kotlinx.coroutines.withContext
  * today means a security tier outside the enum it knows.
  */
 @Composable
-fun DeviceStatusScreen(modifier: Modifier = Modifier) {
-    // The palette is a CompositionLocal with no default — reading it outside
-    // RealityLockTheme is a deliberate hard error. MainActivity still installs a
-    // bare MaterialTheme and is owned by another workstream in this change set,
-    // so this screen installs the theme over its own subtree rather than reach
-    // outside its scope. Nesting is harmless once the app-level theme lands
-    // (same palette, same values); delete this wrapper then.
-    RealityLockTheme(darkTheme = isSystemInDarkTheme()) {
-        DeviceStatusContent(modifier)
-    }
+fun DeviceStatusScreen(
+    modifier: Modifier = Modifier,
+    backupViewModel: BackupViewModel? = null,
+) {
+    // The defensive `RealityLockTheme` wrapper that used to sit here is gone.
+    // It existed because MainActivity still installed a bare MaterialTheme, so
+    // this screen had to provide the palette over its own subtree or hit the
+    // deliberate `error("RealityLockColors requested outside RealityLockTheme")`.
+    // MainActivity now applies the theme at the root, which is where a theme
+    // belongs, so the nesting is redundant.
+    DeviceStatusContent(modifier, backupViewModel)
 }
 
 @Composable
-private fun DeviceStatusContent(modifier: Modifier) {
+private fun DeviceStatusContent(modifier: Modifier, backupViewModel: BackupViewModel?) {
     val context = LocalContext.current
     val capabilities = remember { DeviceCapabilities(context) }
     val gnssProbe = remember { GnssCapabilityProbe(context) }
@@ -128,6 +129,11 @@ private fun DeviceStatusContent(modifier: Modifier) {
             style = MaterialTheme.typography.bodySmall,
             color = colors.inkMuted,
         )
+
+        // Placed first, above the read-only diagnostics below it, because it is
+        // the only thing on this screen the user can act on — and the only one
+        // where doing nothing loses evidence.
+        backupViewModel?.let { BackupSection(viewModel = it) }
 
         DeviceSection(
             title = stringResource(R.string.device_section_build),
