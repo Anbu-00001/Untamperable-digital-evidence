@@ -25,6 +25,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
@@ -56,11 +61,14 @@ import com.realitylock.app.capture.model.CapturedEvent
 import com.realitylock.app.certificate.SignatoryBlock
 import com.realitylock.app.certificate.StatutoryAnnexureContent
 import com.realitylock.app.core.config.CertificateConfig
+import com.realitylock.app.core.config.EvidenceBundleConfig
 import com.realitylock.app.sync.SyncStage
 import com.realitylock.app.sync.SyncState
 import com.realitylock.app.ui.analyze.AnalyzeScreen
 import com.realitylock.app.ui.analyze.AnalyzeViewModel
 import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
+import com.realitylock.app.ui.evidence.EvidenceViewerScreen
+import com.realitylock.app.ui.evidence.EvidenceThumbnail
 import com.realitylock.app.ui.verify.AuthenticityResultPanel
 import com.realitylock.app.ui.verify.ProofsViewModel
 import com.realitylock.app.verify.VerificationReport
@@ -341,9 +349,44 @@ private fun HistoryTab(
 ) {
     val proofsState by proofsViewModel.uiState.collectAsState()
 
+    // Which capture is open full-size, if any. Held by id rather than by the
+    // event object so the viewer survives the list being refreshed underneath it.
+    var viewingEventId by remember { mutableStateOf<String?>(null) }
+
+    // The app version is stamped into the exported bundle's manifest, so a
+    // recipient can tell which build produced the archive. Read here because a
+    // ViewModel has no Context.
+    val bundleContext = LocalContext.current
+    val appVersionLabel = remember(bundleContext) {
+        runCatching {
+            val pkg = bundleContext.packageManager.getPackageInfo(bundleContext.packageName, 0)
+            "${pkg.versionName}"
+        }.getOrDefault("unknown")
+    }
+
     // Sync badges are read from disk, so they need refreshing when the tab is
     // shown again — a background pass may have completed in the meantime.
     LaunchedEffect(events.size) { proofsViewModel.refreshSyncStates() }
+
+    // Full-size viewer, drawn over the list. Returning early would unmount the
+    // LazyColumn and lose its scroll position on every open and close.
+    viewingEventId?.let { openId ->
+        events.firstOrNull { it.eventId == openId }?.let { openEvent ->
+            EvidenceViewerScreen(
+                event = openEvent,
+                // Only the verdict already on screen for THIS event — the same
+                // guard the certificate uses. A verdict belonging to another
+                // capture must never be shown against this photograph.
+                verdict = proofsState.report
+                    ?.takeIf { proofsState.reportEventId == openId }
+                    ?.verdict,
+                onClose = { viewingEventId = null },
+            )
+            return@HistoryTab
+        }
+        // The event vanished (deleted while open) — close rather than linger.
+        viewingEventId = null
+    }
 
     if (events.isEmpty()) {
         Column(
@@ -422,26 +465,43 @@ private fun HistoryTab(
     // The system "save as" dialog. Nothing is written to storage unless the user
     // chooses a destination — no storage permission is involved on any API level.
     val context = LocalContext.current
-    val saveLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(CertificateConfig.MIME_TYPE_PDF),
-    ) { uri ->
+    // `CreateDocument` fixes its MIME type when the launcher is built, so one
+    // launcher cannot serve both a PDF and a ZIP. Two are remembered and the
+    // pending document picks between them — telling the picker a ZIP archive is
+    // a PDF would misname the file and mislead whatever opens it.
+    val writePending: (android.net.Uri?) -> Unit = { uri ->
         val pending = proofsState.pendingCertificate
         if (uri == null || pending == null) {
             proofsViewModel.clearPendingCertificate()
-            return@rememberLauncherForActivityResult
+        } else {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(pending.bytes) }
+                    ?: error("could not open the chosen file for writing")
+            }.fold(
+                onSuccess = { proofsViewModel.clearPendingCertificate() },
+                onFailure = { proofsViewModel.reportCertificateError(it.message ?: it.toString()) },
+            )
         }
-        runCatching {
-            context.contentResolver.openOutputStream(uri)?.use { it.write(pending.bytes) }
-                ?: error("could not open the chosen file for writing")
-        }.fold(
-            onSuccess = { proofsViewModel.clearPendingCertificate() },
-            onFailure = { proofsViewModel.reportCertificateError(it.message ?: it.toString()) },
-        )
     }
 
-    // Launch the picker once a certificate has been rendered.
+    val savePdfLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(CertificateConfig.MIME_TYPE_PDF),
+        writePending,
+    )
+    val saveZipLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(EvidenceBundleConfig.MIME_TYPE_ZIP),
+        writePending,
+    )
+
+    // Launch the picker once a document has been rendered, choosing the launcher
+    // that matches what was actually produced.
     LaunchedEffect(proofsState.pendingCertificate) {
-        proofsState.pendingCertificate?.let { saveLauncher.launch(it.fileName) }
+        proofsState.pendingCertificate?.let { pending ->
+            when (pending.mimeType) {
+                EvidenceBundleConfig.MIME_TYPE_ZIP -> saveZipLauncher.launch(pending.fileName)
+                else -> savePdfLauncher.launch(pending.fileName)
+            }
+        }
     }
 
     LazyColumn(
@@ -519,6 +579,13 @@ private fun HistoryTab(
                             signatories = annexureSignatories,
                         )
                     },
+                    onExportBundle = {
+                        proofsViewModel.buildEvidenceBundle(
+                            eventId = event.eventId,
+                            exportingAppVersion = appVersionLabel,
+                        )
+                    },
+                    onOpenViewer = { viewingEventId = event.eventId },
                 )
 
                 // The result sits directly beneath the event it describes, so a
@@ -589,13 +656,30 @@ private fun EventCard(
     onRetrySync: (() -> Unit)? = null,
     onExportCertificate: (() -> Unit)? = null,
     onExportAnnexure: (() -> Unit)? = null,
+    onExportBundle: (() -> Unit)? = null,
+    /** Opens the full-size viewer. The card shows a thumbnail regardless. */
+    onOpenViewer: (() -> Unit)? = null,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(event.metadata.timestamp.iso8601, style = MaterialTheme.typography.titleSmall)
+            // The photograph, at last. Until this was here the card listed a
+            // timestamp, a hash and a size — a description of evidence with no
+            // way to look at it, on media stored where no other app can reach it.
+            // Showing it beside its own metadata is also what makes the record
+            // presentable to anyone else: a page of hex is not.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                EvidenceThumbnail(event = event, onClick = onOpenViewer)
+                Text(
+                    event.metadata.timestamp.iso8601,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
             Divider()
             DetailRow(
                 stringResource(R.string.event_label_id),
@@ -689,12 +773,27 @@ private fun EventCard(
                 }
             }
 
+            // Verify stays a primary, full-width action; everything else moves
+            // into an overflow menu.
+            //
+            // This is the approved design's "actions are triaged" rule, and it is
+            // also a bug fix. Five TextButtons in one un-wrapping Row exceeded the
+            // card width, and Compose resolved that by squeezing the fourth to
+            // roughly one character — "Export evidence" rendered as a vertical
+            // column of single letters running off the card. A Row cannot hold
+            // five labels of this length at any phone width, so the fix is fewer
+            // things in the row, not a narrower font.
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 onVerify?.let {
-                    TextButton(onClick = it, enabled = !isVerifying) {
+                    Button(
+                        onClick = it,
+                        enabled = !isVerifying,
+                        modifier = Modifier.weight(1f),
+                    ) {
                         Text(
                             stringResource(
                                 if (isVerifying) R.string.verify_running else R.string.verify_action,
@@ -702,45 +801,101 @@ private fun EventCard(
                         )
                     }
                 }
-                onExportCertificate?.let {
-                    TextButton(onClick = it, enabled = !isBuildingCertificate) {
+
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { menuOpen = true },
+                        // 48dp keeps the target above the accessibility minimum;
+                        // the glyph itself is much smaller than the tappable area.
+                        modifier = Modifier.size(48.dp),
+                    ) {
                         Text(
-                            stringResource(
-                                if (isBuildingCertificate) {
-                                    R.string.certificate_generating
-                                } else {
-                                    R.string.certificate_action
-                                },
-                            ),
+                            "\u22EE",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-                // A separate action, never a variant of the one above. The
-                // certificate reports what this system computed; the annexure is
-                // a draft form a person completes and signs. One button emitting
-                // both, or a toggle between them, would blur exactly the line
-                // BSA 2023 s.63 draws (research/06 §1.3).
-                onExportAnnexure?.let {
-                    TextButton(onClick = it, enabled = !isBuildingCertificate) {
-                        Text(
-                            stringResource(
-                                if (isBuildingCertificate) {
-                                    R.string.annexure_generating
-                                } else {
-                                    R.string.annexure_action
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        onExportCertificate?.let { action ->
+                            DropdownMenuItem(
+                                enabled = !isBuildingCertificate,
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            if (isBuildingCertificate) {
+                                                R.string.certificate_generating
+                                            } else {
+                                                R.string.certificate_action
+                                            },
+                                        ),
+                                    )
                                 },
-                            ),
-                        )
+                                onClick = { menuOpen = false; action() },
+                            )
+                        }
+                        // A separate item, never a variant of the one above. The
+                        // certificate reports what this system computed; the
+                        // annexure is a draft form a person completes and signs.
+                        // One entry emitting both would blur exactly the line BSA
+                        // 2023 s.63 draws (research/06 §1.3).
+                        onExportAnnexure?.let { action ->
+                            DropdownMenuItem(
+                                enabled = !isBuildingCertificate,
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            if (isBuildingCertificate) {
+                                                R.string.annexure_generating
+                                            } else {
+                                                R.string.annexure_action
+                                            },
+                                        ),
+                                    )
+                                },
+                                onClick = { menuOpen = false; action() },
+                            )
+                        }
+                        // The evidence itself, as opposed to the two documents
+                        // about it. Distinct wording matters: someone handing a
+                        // case file over needs to know which of the three
+                        // contains the photograph.
+                        onExportBundle?.let { action ->
+                            DropdownMenuItem(
+                                enabled = !isBuildingCertificate,
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            if (isBuildingCertificate) {
+                                                R.string.bundle_generating
+                                            } else {
+                                                R.string.bundle_action
+                                            },
+                                        ),
+                                    )
+                                },
+                                onClick = { menuOpen = false; action() },
+                            )
+                        }
+                        // Only offered when there is something to retry.
+                        if (syncState?.stage == SyncStage.FAILED && onRetrySync != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.sync_retry)) },
+                                onClick = { menuOpen = false; onRetrySync() },
+                            )
+                        }
+                        onDelete?.let { action ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(R.string.history_delete),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                onClick = { menuOpen = false; action() },
+                            )
+                        }
                     }
-                }
-                // Only offered when there is something to retry.
-                if (syncState?.stage == SyncStage.FAILED && onRetrySync != null) {
-                    TextButton(onClick = onRetrySync) {
-                        Text(stringResource(R.string.sync_retry))
-                    }
-                }
-                onDelete?.let {
-                    TextButton(onClick = it) { Text(stringResource(R.string.history_delete)) }
                 }
             }
         }

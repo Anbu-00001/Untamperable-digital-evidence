@@ -125,11 +125,52 @@ val LocalRealityLockColors = staticCompositionLocalOf<RealityLockColors> {
 fun RealityLockTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
     val colors = if (darkTheme) DarkColors else LightColors
     CompositionLocalProvider(LocalRealityLockColors provides colors) {
-        MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
+        MaterialTheme(colorScheme = colors.toMaterialScheme(darkTheme)) {
             content()
         }
     }
 }
+
+/**
+ * Projects the design palette onto Material's `ColorScheme`.
+ *
+ * Without this the theme provided the status tokens and then handed Material a
+ * stock `lightColorScheme()` / `darkColorScheme()` — so the app rendered in
+ * Material's default purple, and the design only appeared on the handful of
+ * screens that read the tokens directly. Every `Button`, `Card`, `TabRow`,
+ * `Divider` and default `Text` in the app takes its colour from `ColorScheme`,
+ * so this mapping is what actually makes the redesign visible.
+ *
+ * Only the roles the app uses are mapped; the rest keep Material's derived
+ * defaults. Mapping a role to a token that was never designed for it would look
+ * arbitrary, and Material's own derivation is a better guess than mine.
+ */
+private fun RealityLockColors.toMaterialScheme(darkTheme: Boolean) =
+    (if (darkTheme) darkColorScheme() else lightColorScheme()).copy(
+        primary = primary,
+        onPrimary = primaryText,
+        primaryContainer = primarySoft,
+        onPrimaryContainer = primary,
+        secondary = info,
+        onSecondary = primaryText,
+        background = bg,
+        onBackground = ink,
+        surface = surface,
+        onSurface = ink,
+        // Cards and chips sit on this; `surfaceAlt` is the design's own
+        // second-level surface, so the elevation story stays the designer's.
+        surfaceVariant = surfaceAlt,
+        onSurfaceVariant = inkMuted,
+        outline = border,
+        outlineVariant = border,
+        // `fail` rather than Material's red: an error in this app is the same
+        // state a failed check reports, and two different reds would imply two
+        // different meanings.
+        error = fail,
+        onError = primaryText,
+        errorContainer = failSoft,
+        onErrorContainer = fail,
+    )
 
 /** Shorthand: `RealityLockTheme.colors.pass`. */
 object RealityLockThemeTokens {

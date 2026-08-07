@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import com.realitylock.app.ui.theme.RealityLockTheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -36,7 +38,19 @@ class MainActivity : ComponentActivity() {
         val container = (application as RealityLockApplication).container
 
         setContent {
-            MaterialTheme {
+            // RealityLockTheme, not a bare MaterialTheme. It installs MaterialTheme
+            // itself AND provides the status palette that carries pass / fail /
+            // unavailable / unknown — four states Material's ColorScheme has no
+            // slot for (ADR-0008).
+            //
+            // Applied at the root because that is where a theme belongs. While it
+            // was missing, individual screens wrapped themselves defensively and
+            // anything that did not — EvidenceThumbnail, on every History card —
+            // hit the deliberate `error("RealityLockColors requested outside
+            // RealityLockTheme")` and took the tab down. That hard error did its
+            // job: it surfaced the gap in an instrumented test instead of shipping
+            // a screen with silently wrong colours.
+            RealityLockTheme(darkTheme = isSystemInDarkTheme()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val captureViewModel: CaptureViewModel =
                         viewModel(factory = CaptureViewModel.factory(container))

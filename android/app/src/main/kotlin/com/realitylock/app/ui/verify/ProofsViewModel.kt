@@ -8,6 +8,9 @@ import com.realitylock.app.certificate.CertificateContent
 import com.realitylock.app.certificate.SignatoryBlock
 import com.realitylock.app.certificate.StatutoryAnnexureContent
 import com.realitylock.app.core.config.CertificateConfig
+import java.io.File
+import com.realitylock.app.export.EvidenceBundle
+import com.realitylock.app.core.config.EvidenceBundleConfig
 import com.realitylock.app.core.di.AppContainer
 import com.realitylock.app.core.time.ClockCorrelator
 import com.realitylock.app.sync.SyncState
@@ -22,8 +25,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** A generated certificate, held until the user picks where to save it. */
-data class PendingCertificate(val eventId: String, val bytes: ByteArray, val fileName: String) {
+/**
+ * A generated document, held until the user picks where to save it.
+ *
+ * Carries its own [mimeType] because this now covers three different documents —
+ * a PDF certificate, a PDF annexure, and a ZIP evidence bundle. A single
+ * hardcoded type would hand the system "save as" dialog a lie about the archive,
+ * and the receiving app would be told it had a PDF.
+ */
+data class PendingCertificate(
+    val eventId: String,
+    val bytes: ByteArray,
+    val fileName: String,
+    val mimeType: String = CertificateConfig.MIME_TYPE_PDF,
+) {
     // ByteArray needs structural equals/hashCode, which data classes do not give it.
     override fun equals(other: Any?): Boolean =
         this === other || (other is PendingCertificate && eventId == other.eventId &&
@@ -270,6 +285,72 @@ class ProofsViewModel(
                         fileName = CertificateConfig.ANNEXURE_FILENAME_PREFIX +
                             eventId.take(CertificateConfig.FILENAME_EVENT_ID_CHARS) +
                             CertificateConfig.FILENAME_EXTENSION,
+                    )
+                }
+            }
+
+            _uiState.update {
+                outcome.fold(
+                    onSuccess = { pending ->
+                        it.copy(buildingCertificateFor = null, pendingCertificate = pending)
+                    },
+                    onFailure = { error ->
+                        it.copy(
+                            buildingCertificateFor = null,
+                            certificateError = error.message ?: error.javaClass.simpleName,
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * Builds the evidence bundle — the photograph and the signed package — and
+     * holds it for the same save dialog the two PDFs use.
+     *
+     * This is the export that was missing. The certificate and the s.63 annexure
+     * are documents *about* a capture; neither contains the capture. Media and
+     * package live in app-private storage, so before this there was no way to
+     * hand anyone the evidence itself, and uninstalling the app destroyed it.
+     * The backend is not a substitute — it is on a free tier with an ephemeral
+     * filesystem, and a probe on 2026-08-06 found it holding zero events.
+     *
+     * Reuses [PendingCertificate] and the existing save flow deliberately: the
+     * dialog only ever needed bytes and a filename, so a third document type
+     * costs no new UI machinery.
+     */
+    fun buildEvidenceBundle(eventId: String, exportingAppVersion: String) {
+        _uiState.update { it.copy(buildingCertificateFor = eventId, certificateError = null) }
+
+        viewModelScope.launch {
+            val outcome = withContext(ioDispatcher) {
+                runCatching {
+                    val event = repository.findById(eventId)
+                        ?: error(ERROR_EVENT_MISSING)
+                    // The stored bytes, never a re-serialization: the package was
+                    // signed over exactly these bytes, and canonical JSON that
+                    // round-trips through a parser can come back byte-different
+                    // and silently invalidate the signature it carries.
+                    val packageBytes = repository.readPackageBytes(eventId)
+                    val mediaBytes = File(event.mediaFilePath)
+                        .takeIf { it.isFile }
+                        ?.readBytes()
+
+                    val bundle = EvidenceBundle.from(
+                        event = event,
+                        packageBytes = packageBytes,
+                        mediaBytes = mediaBytes,
+                        exportingAppVersion = exportingAppVersion,
+                        exportedAtIso = ClockCorrelator.toIso8601Utc(System.currentTimeMillis()),
+                    )
+                    PendingCertificate(
+                        eventId = eventId,
+                        bytes = container.evidenceBundleExporter.export(bundle),
+                        fileName = EvidenceBundleConfig.FILENAME_PREFIX +
+                            eventId.take(CertificateConfig.FILENAME_EVENT_ID_CHARS) +
+                            EvidenceBundleConfig.FILENAME_EXTENSION,
+                        mimeType = EvidenceBundleConfig.MIME_TYPE_ZIP,
                     )
                 }
             }

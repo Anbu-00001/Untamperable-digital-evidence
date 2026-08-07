@@ -12,6 +12,7 @@ import com.realitylock.app.capture.store.EventRepository
 import com.realitylock.app.capture.store.FileEventRepository
 import com.realitylock.app.certificate.CertificateRenderer
 import com.realitylock.app.certificate.StatutoryAnnexureRenderer
+import com.realitylock.app.export.EvidenceBundleExporter
 import com.realitylock.app.core.config.AppConfig
 import com.realitylock.app.core.config.CaptureConfig
 import com.realitylock.app.core.config.SyncConfig
@@ -96,6 +97,13 @@ class AppContainer(context: Context) {
     // would invite a single PDF that reads as though this system certified
     // something under BSA 2023 s.63 — which it cannot do.
     val statutoryAnnexureRenderer = StatutoryAnnexureRenderer()
+
+    // Exports the evidence ITSELF, as opposed to the two renderers above, which
+    // produce documents *about* it. Until this existed the app could hand a
+    // reader a certificate and a statutory annexure but never the photograph and
+    // signed package they both describe — and app-private storage meant nothing
+    // else could reach them either.
+    val evidenceBundleExporter = EvidenceBundleExporter()
 
     /**
      * Requests a background sync pass.

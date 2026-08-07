@@ -310,6 +310,20 @@
     <!-- manufacturer, model, Android API level -->
     <string name="evidence_device_format">%1$s %2$s · Android API %3$d</string>
 
+    <!-- ============ Evidence bundle export ============
+         The evidence ITSELF — the photograph plus the signed proof package —
+         as opposed to the certificate and the s.63 annexure, which are documents
+         *about* a capture and contain neither. Worded so that someone handing a
+         case file over can tell which of the three holds the exhibit. -->
+    <string name="bundle_action">Export evidence</string>
+    <string name="bundle_generating">Building bundle…</string>
+    <string name="bundle_saved">Evidence bundle saved.</string>
+
+    <!-- ==================== Evidence viewer ==================== -->
+    <string name="viewer_close">Close</string>
+    <string name="viewer_open">View photo</string>
+    <string name="viewer_image_description">The captured photograph for this event.</string>
+
     <!-- ==================== Shared ==================== -->
     <string name="common_yes">Yes</string>
     <string name="common_no">No</string>
