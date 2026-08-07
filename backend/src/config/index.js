@@ -158,6 +158,40 @@ const config = {
     maxSkewSeconds: envInt('PROOF_READ_AUTH_SKEW_SECONDS', 300),
   },
 
+  // ------------------------------------------------------------------------
+  // RFC 3161 timestamp anchoring (Phase 7).
+  //
+  // Off by default, and that default is a deliberate one rather than caution:
+  // enabling it makes the ingest path perform an outbound network call, and a
+  // library importing this config — including every unit test — would otherwise
+  // silently acquire a dependency on a third-party server being reachable.
+  // `render.yaml` turns it on for the deployed service, where it belongs.
+  // ------------------------------------------------------------------------
+  timestampAnchor: {
+    enabled: envFlag('TIMESTAMP_ANCHOR_ENABLED', false),
+
+    // DigiCert: free, no account, no rate limit published, and the only one of
+    // the five measured on 2026-08-07 that answered in under 700 ms. Its
+    // responder chains to DigiCert Trusted Root G4, which is in Node's bundled
+    // Mozilla set, so no certificate has to be shipped with this service.
+    //
+    // Overridable because a TSA is a single point of failure that this project
+    // does not control, and swapping one should be an env change, not a deploy.
+    tsaUrl: process.env.TIMESTAMP_ANCHOR_TSA_URL || 'http://timestamp.digicert.com',
+
+    // Measured round-trips were 650 ms – 1.4 s. Five seconds is generous enough
+    // to absorb a slow day and short enough that a hung TSA cannot hold an
+    // ingest request open.
+    timeoutMs: envInt('TIMESTAMP_ANCHOR_TIMEOUT_MS', 5000),
+
+    // How far a capture's claimed wall clock may exceed the TSA's genTime before
+    // it is called a contradiction rather than clock drift. A capture recorded
+    // *after* an independent authority already saw its root is impossible, but
+    // an unsynchronised phone can be minutes out, and calling ordinary drift
+    // "impossible" would burn the check's credibility on a false positive.
+    maxClockLeadSeconds: envInt('TIMESTAMP_ANCHOR_MAX_LEAD_SECONDS', 300),
+  },
+
   // The proof-package schema is the single shared contract with the app. Read
   // from docs/ by default; overridable for tests/deployment layouts.
   proofSchemaPath:

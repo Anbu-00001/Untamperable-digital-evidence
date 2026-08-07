@@ -155,6 +155,9 @@ function verifyProofPackage(pkg, mediaBytes, options = {}) {
     notes,
   );
 
+  // --- independent time anchor (RFC 3161) -----------------------------------
+  Object.assign(checks, checkTimestampAnchor(pkg, options.anchorVerification, notes));
+
   collectAdvisories(pkg, checks, advisories, historyReadFailed);
 
   return { checks, notes, advisories, verdict: verdictFor(checks) };
@@ -500,6 +503,75 @@ function verifyAttestationChain(pkg, signingKeyDer, notes) {
 }
 
 /**
+ * Turns an RFC 3161 anchor verification into check outcomes.
+ *
+ * Takes an already-computed result rather than a token, because verifying a
+ * token needs WebCrypto and is therefore async, while `verifyProofPackage` is a
+ * synchronous pure function of its inputs — which is exactly what makes it
+ * testable without a network or a clock. The route awaits the token check and
+ * hands the answer in.
+ *
+ * Two separate checks, because they answer different questions and can disagree:
+ *
+ *  - **timestampAnchorValid** — is there a token, does it verify, and is it over
+ *    *this* package's root? `unavailable` when no anchor exists, which is the
+ *    normal state for a package captured while the service had anchoring off or
+ *    the TSA unreachable. Absence is not a defect (ADR-0006 §5).
+ *
+ *  - **captureTimeNotAfterAnchor** — the one check in this system that can
+ *    contradict a device clock with evidence rather than suspicion. A TSA will
+ *    not sign a digest it has not been shown, so the root existed by `genTime`.
+ *    If the device claims it captured the event *after* that, the two accounts
+ *    are irreconcilable and one of them is false.
+ *
+ *    Tolerance exists because an unsynchronised phone is ordinary and a
+ *    false positive here would be expensive: this check calling honest drift
+ *    "impossible" would teach a reviewer to ignore it. Note the asymmetry — a
+ *    clock running *behind* is not flagged at all, because a capture genuinely
+ *    can precede its anchor by any amount. Only the impossible direction fails.
+ */
+function checkTimestampAnchor(pkg, anchorVerification, notes) {
+  if (!anchorVerification) {
+    return { timestampAnchorValid: UNAVAILABLE, captureTimeNotAfterAnchor: UNAVAILABLE };
+  }
+
+  if (!anchorVerification.ok) {
+    notes.push(
+      `the stored timestamp token did not verify: ${(anchorVerification.reasons || []).join('; ')}`,
+    );
+    // A token that is present but bad is a finding, not a missing datum. It got
+    // into the record somehow, and the honest report is that it does not hold up.
+    return { timestampAnchorValid: FAIL, captureTimeNotAfterAnchor: UNAVAILABLE };
+  }
+
+  const checks = { timestampAnchorValid: PASS };
+
+  const claimedMillis = pkg.metadata && pkg.metadata.timestamp
+    ? pkg.metadata.timestamp.wallClockMillis
+    : null;
+  if (typeof claimedMillis !== 'number' || !Number.isFinite(claimedMillis)) {
+    checks.captureTimeNotAfterAnchor = UNAVAILABLE;
+    return checks;
+  }
+
+  const toleranceMillis = config.timestampAnchor.maxClockLeadSeconds * 1000;
+  const leadMillis = claimedMillis - anchorVerification.genTimeMillis;
+
+  if (leadMillis > toleranceMillis) {
+    checks.captureTimeNotAfterAnchor = FAIL;
+    notes.push(
+      `the device claims a capture time ${Math.round(leadMillis / 1000)}s after ` +
+        `${anchorVerification.genTime}, when an independent timestamp authority had ` +
+        'already seen this package\'s Merkle root — a capture cannot postdate proof ' +
+        'that its own root already existed',
+    );
+  } else {
+    checks.captureTimeNotAfterAnchor = PASS;
+  }
+  return checks;
+}
+
+/**
  * Two rules, in order (ADR-0006 §5):
  *
  *  1. **Any** check that returned `fail` makes the verdict `failed`. There is no
@@ -523,6 +595,7 @@ function verdictFor(checks) {
 module.exports = {
   verifyProofPackage,
   verifyAttestationChain,
+  checkTimestampAnchor,
   merkleRoot2Leaf,
   verdictFor,
   DECISIVE_CHECKS,

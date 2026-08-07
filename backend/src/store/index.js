@@ -27,6 +27,8 @@ const support = require('./support');
  *   getPackage(eventId)                  -> package | null
  *   putMedia(eventId, bytes, sha256Hex)  -> { storageRef }        | NotFoundError
  *   getMedia(eventId)                    -> Buffer | null
+ *   putAnchor(eventId, anchor)           -> { created, anchor }  | NotFoundError
+ *   getAnchor(eventId)                   -> anchor | null
  *   findPreviousPackage(installId, beforeWallClockMillis) -> package | null
  *   listEventIds()                       -> string[]
  * ---------------------------------------------------------------------------

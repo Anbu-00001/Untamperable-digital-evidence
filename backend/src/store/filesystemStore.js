@@ -7,6 +7,7 @@ const { storageRefFor } = require('./memoryStore');
 
 const PACKAGES_SUBDIR = 'packages';
 const MEDIA_SUBDIR = 'media';
+const ANCHORS_SUBDIR = 'anchors';
 const PACKAGE_EXTENSION = '.json';
 
 /**
@@ -33,8 +34,10 @@ class FilesystemPackageStore {
     this.dataDir = dataDir;
     this.packagesDir = path.join(dataDir, PACKAGES_SUBDIR);
     this.mediaDir = path.join(dataDir, MEDIA_SUBDIR);
+    this.anchorsDir = path.join(dataDir, ANCHORS_SUBDIR);
     fs.mkdirSync(this.packagesDir, { recursive: true });
     fs.mkdirSync(this.mediaDir, { recursive: true });
+    fs.mkdirSync(this.anchorsDir, { recursive: true });
   }
 
   get driverName() {
@@ -98,6 +101,49 @@ class FilesystemPackageStore {
     const file = path.join(this.mediaDir, pkg.media.sha256);
     if (!fs.existsSync(file)) return null;
     return fs.readFileSync(file);
+  }
+
+  /**
+   * Timestamp anchors live beside packages rather than inside them.
+   *
+   * A package is immutable once stored, and that rule is load-bearing — it is
+   * what stops anyone with network access from rewriting stored evidence. An
+   * anchor arrives *after* the package (the TSA can only stamp a root that
+   * already exists), so merging it in would mean either breaking immutability or
+   * making the ingest path wait on a third-party server before it can store
+   * anything. Keeping it separate costs one directory and keeps both properties.
+   *
+   * Also first-write-wins: a second anchor for the same event is dropped, not
+   * substituted. The earliest token is the strongest claim the evidence has —
+   * it bounds the root's age most tightly — so replacing it could only ever
+   * weaken the record.
+   */
+  putAnchor(eventId, anchor) {
+    if (!this.getPackage(eventId)) {
+      throw new NotFoundError(`no stored package for event ${eventId}`);
+    }
+    const file = this._anchorFile(eventId);
+    try {
+      fs.writeFileSync(file, JSON.stringify(anchor, null, 2), { flag: 'wx' });
+      return { created: true, anchor };
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      return { created: false, anchor: this.getAnchor(eventId) };
+    }
+  }
+
+  getAnchor(eventId) {
+    if (!isSafeEventId(eventId)) return null;
+    try {
+      return JSON.parse(fs.readFileSync(this._anchorFile(eventId), 'utf8'));
+    } catch (err) {
+      if (err.code === 'ENOENT') return null;
+      throw err;
+    }
+  }
+
+  _anchorFile(eventId) {
+    return path.join(this.anchorsDir, `${eventId}.json`);
   }
 
   findPreviousPackage(installId, beforeWallClockMillis, predicate) {

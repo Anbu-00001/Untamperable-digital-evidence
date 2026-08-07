@@ -12,6 +12,7 @@ class MemoryPackageStore {
     this.packages = new Map(); // eventId -> package
     this.media = new Map(); // sha256hex -> Buffer
     this.mediaByEvent = new Map(); // eventId -> sha256hex
+    this.anchors = new Map(); // eventId -> anchor record
   }
 
   get driverName() {
@@ -50,6 +51,20 @@ class MemoryPackageStore {
     const hash = this.mediaByEvent.get(eventId);
     if (!hash) return null;
     return this.media.get(hash) || null;
+  }
+
+  putAnchor(eventId, anchor) {
+    if (!this.packages.has(eventId)) {
+      throw new NotFoundError(`no stored package for event ${eventId}`);
+    }
+    const existing = this.anchors.get(eventId);
+    if (existing) return { created: false, anchor: existing };
+    this.anchors.set(eventId, anchor);
+    return { created: true, anchor };
+  }
+
+  getAnchor(eventId) {
+    return this.anchors.get(eventId) || null;
   }
 
   findPreviousPackage(installId, beforeWallClockMillis, predicate) {

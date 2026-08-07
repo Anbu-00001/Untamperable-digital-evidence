@@ -62,6 +62,26 @@ services:
       # rather than quietly failing open.
       - key: PROOF_READ_AUTH
         value: "true"
+      # RFC 3161 time anchoring. ON here and OFF by default in config, because
+      # enabling it makes the ingest path perform an outbound call — fine for a
+      # deployed service, wrong as a default that every unit test would inherit.
+      #
+      # Best-effort by construction: if the TSA is unreachable the package is
+      # still stored and the anchor checks report `unavailable`. A timestamp
+      # authority being down is not evidence about a capture.
+      - key: TIMESTAMP_ANCHOR_ENABLED
+        value: "true"
+      # DigiCert: no account, no published rate limit, and its responder chains
+      # to DigiCert Trusted Root G4 which Node already bundles — so no
+      # certificate ships with this service and none can go stale.
+      #
+      # Do NOT substitute freetsa.org here without also solving trust. It is the
+      # most-recommended free TSA and it does NOT chain to any public root (probed
+      # 2026-08-07: "No valid certificate paths found"), so using it would mean
+      # pinning a self-signed CA. Same for timestamp.acs.microsoft.com.
+      # `node backend/scripts/ops/probe_tsa.js` re-checks any candidate.
+      - key: TIMESTAMP_ANCHOR_TSA_URL
+        value: "http://timestamp.digicert.com"
       # NOTE — not set here, and worth understanding before relying on the limit
       # above: without REDIS_URL the limiter counts per process. A probe on
       # 2026-08-06 found this deployment answering from THREE independent

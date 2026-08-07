@@ -4,6 +4,7 @@ const express = require('express');
 const config = require('../config');
 const { loadValidator } = require('../services/proofSchema');
 const { verifyProofPackage } = require('../services/proofVerifier');
+const { verifyTimestampToken } = require('../services/timestampAnchor');
 const { getSharedStore, isSafeEventId } = require('../store');
 const { hasLocation } = require('../store/support');
 
@@ -71,6 +72,44 @@ function previousFor(pkg) {
 }
 
 /**
+ * Re-verifies the stored RFC 3161 token for an event, if one exists.
+ *
+ * Re-verified on every request rather than trusting the result recorded at
+ * ingest. The token sits on disk beside the package, and the store is not a
+ * trusted input — the same reasoning that makes `GET /verify/:eventId` re-run
+ * schema validation on a file it just read. A token that has been swapped since
+ * it was accepted must be caught here, not vouched for by a cached `ok: true`.
+ *
+ * Returns null when there is no anchor, which the verifier reports as
+ * `unavailable` rather than as a failure.
+ */
+async function anchorVerificationFor(eventId, expectedRootHex) {
+  const store = getSharedStore();
+  if (typeof store.getAnchor !== 'function') return null;
+
+  let anchor;
+  try {
+    anchor = store.getAnchor(eventId);
+  } catch {
+    return null;
+  }
+  if (!anchor || !anchor.tokenBase64) return null;
+
+  try {
+    const verification = await verifyTimestampToken(
+      Buffer.from(anchor.tokenBase64, 'base64'),
+      expectedRootHex,
+    );
+    return { ...verification, tsaUrl: anchor.tsaUrl };
+  } catch (err) {
+    // verifyTimestampToken is written not to throw, so reaching here means
+    // something structural broke. Report it as a failed anchor rather than
+    // letting it take down the whole verification.
+    return { ok: false, reasons: [`anchor could not be checked: ${err.message}`] };
+  }
+}
+
+/**
  * POST /verify
  * Returns a per-check breakdown mirroring the verification module design
  * (research/02 §8 Step 10) — all five checks:
@@ -85,7 +124,7 @@ function previousFor(pkg) {
  * the same install, so verifying a package the store has never seen yields
  * `unavailable` for that one check rather than a vacuous pass.
  */
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   // Two accepted shapes:
   //   (a) a bare proof package, or
   //   (b) an envelope { package, mediaBase64 } when the media is supplied too.
@@ -112,9 +151,44 @@ router.post('/', (req, res) => {
     mediaBytes = getSharedStore().getMedia(pkg.eventId) || undefined;
   }
 
-  const result = verifyProofPackage(pkg, mediaBytes, previousFor(pkg));
+  const result = verifyProofPackage(pkg, mediaBytes, {
+    ...previousFor(pkg),
+    anchorVerification: await anchorVerificationFor(pkg.eventId, pkg.merkle.root),
+  });
   // Validation ran above; anything invalid already returned 400.
   return res.status(200).json(verificationResponse(result, 'pass'));
+});
+
+/**
+ * GET /verify/:eventId/timestamp
+ * The raw DER timestamp token, as `application/timestamp-reply`.
+ *
+ * Public, and mounted under /verify rather than /proof on purpose. `/proof` is
+ * gated because a package carries GPS coordinates; a timestamp token carries a
+ * digest, a time and the TSA's own certificates, and `GET /verify/:eventId`
+ * already publishes that digest. Gating it would protect nothing and would
+ * defeat the point — an anchor a third party cannot fetch is not independent
+ * verification, it is this service's word again.
+ *
+ * Downloaded as `token.tsr`, which is the filename in the `verifyCommand` the
+ * verification response prints:
+ *
+ *     openssl ts -verify -digest <root> -in token.tsr -CAfile <ca-bundle>
+ */
+router.get('/:eventId/timestamp', (req, res) => {
+  const { eventId } = req.params;
+  if (!isSafeEventId(eventId)) {
+    return res.status(400).json({ error: 'invalid_event_id' });
+  }
+  const store = getSharedStore();
+  const anchor = typeof store.getAnchor === 'function' ? store.getAnchor(eventId) : null;
+  if (!anchor || !anchor.tokenBase64) {
+    return res.status(404).json({ error: 'no_timestamp_anchor', eventId });
+  }
+  const token = Buffer.from(anchor.tokenBase64, 'base64');
+  res.setHeader('Content-Type', 'application/timestamp-reply');
+  res.setHeader('Content-Disposition', `attachment; filename="${eventId}.tsr"`);
+  return res.status(200).send(token);
 });
 
 /**
@@ -128,7 +202,7 @@ router.post('/', (req, res) => {
  * coordinates, and a verification badge must not double as a location leak
  * (ADR-0006 §7). Fetching the package itself is `GET /proof/:eventId`.
  */
-router.get('/:eventId', (req, res) => {
+router.get('/:eventId', async (req, res) => {
   const { eventId } = req.params;
   if (!isSafeEventId(eventId)) {
     return res.status(400).json({ error: 'invalid_event_id' });
@@ -145,7 +219,11 @@ router.get('/:eventId', (req, res) => {
   // reported as such rather than silently assumed well-formed.
   const schemaValid = validate(pkg) ? 'pass' : 'fail';
 
-  const result = verifyProofPackage(pkg, store.getMedia(eventId) || undefined, previousFor(pkg));
+  const anchorVerification = await anchorVerificationFor(eventId, pkg.merkle.root);
+  const result = verifyProofPackage(pkg, store.getMedia(eventId) || undefined, {
+    ...previousFor(pkg),
+    anchorVerification,
+  });
 
   return res.status(200).json({
     eventId,
@@ -153,6 +231,18 @@ router.get('/:eventId', (req, res) => {
     // media can compare against without us disclosing anything else.
     merkleRoot: pkg.merkle.root,
     capturedAt: pkg.metadata.timestamp.iso8601,
+    // The independent time bound, when one exists. Echoed because it is the one
+    // fact here that does NOT rest on the device's own account of itself, and a
+    // reader needs the TSA's name and time to check it for themselves.
+    timestampAnchor: anchorVerification && anchorVerification.ok
+      ? {
+          genTime: anchorVerification.genTime,
+          authority: anchorVerification.signerSubject,
+          serialNumber: anchorVerification.serialNumber,
+          verifyCommand:
+            `openssl ts -verify -digest ${pkg.merkle.root} -in token.tsr -CAfile <ca-bundle>`,
+        }
+      : null,
     ...verificationResponse(result, schemaValid),
   });
 });

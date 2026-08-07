@@ -17,6 +17,7 @@
   "dependencies": {
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
+    "asn1js": "^3.0.10",
     "canonicalize": "^2.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -24,6 +25,7 @@
     "express-rate-limit": "^8.6.1",
     "helmet": "^8.1.0",
     "morgan": "^1.10.0",
+    "pkijs": "^3.4.0",
     "rate-limit-redis": "^6.0.1",
     "redis": "^6.2.0"
   }
