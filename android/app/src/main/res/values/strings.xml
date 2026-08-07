@@ -227,6 +227,89 @@
     <string name="annexure_label_install_id">Application install identifier</string>
     <string name="annexure_label_software">Application version</string>
 
+    <!-- ==================== Evidence viewer (Phase 7) ====================
+         Why this section exists at all. Captures are written to app-private
+         internal storage with no MediaStore entry — correct for an evidence
+         tool, since no other app can read them and nothing lands in a shared
+         gallery, but it also meant there was NO way to look at what had been
+         recorded. The History tab listed hashes and byte counts of photographs
+         the user had never seen. An evidence tool whose evidence is invisible is
+         missing its point.
+
+         The one constraint every string below is written under: DISPLAYING A
+         PHOTOGRAPH IS NOT A CLAIM ABOUT IT. The natural reading of "the app
+         showed me the image" is "the app stands behind the image", and that
+         inference is false — rendering a file proves only that the file decoded.
+         So the viewer states the event's verification standing in words, always,
+         and an event nobody has verified says so outright rather than showing
+         nothing. Silence beside a photograph reads as approval, which is the
+         precise failure this wording exists to prevent.
+
+         The five verdict WORDS are not repeated here. The viewer reuses
+         verify_verdict_* so a verdict never reads differently in two places in
+         the app; only the framing around them is new. The one exception is
+         evidence_status_not_verified, which mirrors
+         certificate_verdict_not_verified for the same reason that string exists:
+         "never checked" is not "checked and unrecognised".
+
+         Failure text is deliberately specific about WHICH failure. "The file is
+         gone" and "the file is here but would not decode" are different facts
+         about an evidence record, and neither may be rendered as an empty frame
+         — a blank space is indistinguishable from a photograph of a dark room. -->
+    <string name="evidence_title">Captured evidence</string>
+    <string name="evidence_close">Close</string>
+    <string name="evidence_open">View photo</string>
+    <string name="evidence_loading">Loading the photograph…</string>
+
+    <!-- Content descriptions. Each names the subject and its capture time and
+         stops there: a screen-reader user must get the same non-claim a sighted
+         user does, never a warrant the visual UI does not give. -->
+    <!-- capture time -->
+    <string name="evidence_image_content_description">Photograph captured at %1$s, shown as stored. Verification status is stated below.</string>
+    <!-- capture time -->
+    <string name="evidence_thumbnail_content_description">Thumbnail of the photograph captured at %1$s</string>
+    <string name="evidence_thumbnail_missing">Image file missing</string>
+    <string name="evidence_thumbnail_unreadable">Image file could not be read</string>
+
+    <string name="evidence_error_missing_title">The image file is gone</string>
+    <string name="evidence_error_missing_body">This event\'s metadata is still stored, but the image file it refers to is no longer on this device. Captures live in app-private storage, so clearing the app\'s data or uninstalling it deletes them permanently.</string>
+    <string name="evidence_error_unreadable_title">The image could not be read</string>
+    <!-- platform failure reason -->
+    <string name="evidence_error_unreadable_body">The file is present but could not be decoded as an image (%1$s). This is reported rather than shown as an empty frame, because a blank space is indistinguishable from a photograph of nothing.</string>
+    <string name="evidence_error_reason_unknown">no further detail available</string>
+
+    <string name="evidence_verification_title">Verification status</string>
+    <string name="evidence_status_not_verified">NOT VERIFIED</string>
+    <string name="evidence_display_disclaimer">This viewer shows the media file the proof package commits to, exactly as it is stored. Displaying it is not a check: an image on screen is a rendering of bytes, not evidence that those bytes are the originals.</string>
+
+    <!-- One body per standing. Each says what has actually been established, and
+         each stops short of what has not. -->
+    <string name="evidence_verdict_body_absent">This event has not been checked against the verification service, so nothing on this screen says whether the image is unaltered. Use Verify on this event in History to find out.</string>
+    <string name="evidence_verdict_body_verified">A verification run found every decisive check passing: this file is unaltered since capture and was signed by the key the package names. That says nothing about whether the scene was real, unstaged, or correctly described.</string>
+    <string name="evidence_verdict_body_failed">A verification run found at least one failing check. What you are looking at is still the file this device stored, but the proof around it does not hold together — see the check breakdown in History for which part.</string>
+    <string name="evidence_verdict_body_incomplete">A verification run completed with no failure, but a decisive check could not be run. This is NOT a pass: the image is unproven either way.</string>
+    <string name="evidence_verdict_body_invalid_format">The stored document could not be read as a proof package, so nothing inside it was checked. That is a statement about the document, not a finding about the image.</string>
+    <string name="evidence_verdict_body_unknown">The verifier returned a verdict this app version cannot interpret. Treat this image as unproven rather than as either outcome.</string>
+
+    <string name="evidence_section_details">Capture details</string>
+    <string name="evidence_label_time">Captured (UTC)</string>
+    <string name="evidence_label_location">Location</string>
+    <string name="evidence_label_device">Device</string>
+    <string name="evidence_label_event">Event ID</string>
+    <!-- Latitude and longitude, each labelled rather than bare. A bare
+         "12,971, 77,594" is unreadable in any locale that uses a comma decimal
+         separator, and coordinates are the last thing that should be ambiguous. -->
+    <string name="evidence_location_format">lat %1$.3f, lon %2$.3f</string>
+    <!-- reported accuracy in metres -->
+    <string name="evidence_location_accuracy">±%1$.0f m reported accuracy at capture</string>
+    <!-- Matches certificate_framing_4. Rounding is a DISPLAY decision about a
+         screen someone may photograph or share; the signed package is untouched. -->
+    <string name="evidence_location_precision_note">Shown to three decimal places (~100 m). The exact coordinate stays in the proof package and is never rounded there.</string>
+    <string name="evidence_location_absent">not recorded — no location was available at capture, and none was guessed</string>
+    <string name="evidence_location_mock">Mock location detected at capture</string>
+    <!-- manufacturer, model, Android API level -->
+    <string name="evidence_device_format">%1$s %2$s · Android API %3$d</string>
+
     <!-- ==================== Shared ==================== -->
     <string name="common_yes">Yes</string>
     <string name="common_no">No</string>

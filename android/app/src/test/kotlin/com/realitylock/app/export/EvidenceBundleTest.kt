@@ -30,7 +30,7 @@ class EvidenceBundleTest {
         assertEquals(EVENT_ID, bundle.eventId)
         assertEquals("$EVENT_ID.json", bundle.packageEntryName)
         assertEquals("$EVENT_ID.jpg", bundle.mediaEntryName)
-        assertEquals("2026-07-23T09:12:25.678Z", bundle.capturedAtIso)
+        assertEquals("2026-07-23T13:12:25.678Z", bundle.capturedAtIso)
         assertEquals(EvidenceBundleFixtures.MERKLE_ROOT, bundle.merkleRoot)
         assertEquals("SHA-256", bundle.hashAlgorithm)
         assertEquals("SHA256withECDSA", bundle.signatureAlgorithm)

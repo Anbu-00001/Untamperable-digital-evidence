@@ -83,6 +83,15 @@ object EvidenceBundleFixtures {
             ""
         }
         // Formatting below is intentionally scruffy. Do not "fix" it.
+        //
+        // One value in it is NOT free to change, though: `iso8601` must render
+        // `wallClockMillis` exactly. The two were four hours apart when this
+        // fixture was written — inherited from a defect in
+        // docs/design/examples/proof-package.example.json that was fixed on
+        // 2026-08-07 — which modelled a package the backend's
+        // checkTimestampPlausible rejects outright. 1784812345678 ms is
+        // 2026-07-23T13:12:25.678Z. A fixture for an evidence exporter should
+        // not itself be inadmissible evidence.
         return """{"schemaUrn":"urn:realitylock:proof-package:1.0.0",
           "schemaVersion" :"1.0.0",
             "eventId":"$eventId",
@@ -91,7 +100,7 @@ object EvidenceBundleFixtures {
           "metadata":{"location":{"latitude":12.9716000,"longitude":77.5946,
               "accuracyMeters":4.2,"altitudeMeters":920.0,"provider":"fused",
               "fixAgeMillis":850,"isMock":false},
-            "timestamp":{"wallClockMillis":1784812345678,"iso8601":"2026-07-23T09:12:25.678Z",
+            "timestamp":{"wallClockMillis":1784812345678,"iso8601":"2026-07-23T13:12:25.678Z",
               "elapsedRealtimeNanos":894512000000000,"wallClockOffsetMillis":1783917833678,
               "gpsTimeMillis":1784812345120},
             "motion":{"accelerometer":[0.12,9.79,0.34],"gyroscope":[0.001,-0.002,0.0],
@@ -144,7 +153,7 @@ object EvidenceBundleFixtures {
             ),
             timestamp = TimestampData(
                 wallClockMillis = 1_784_812_345_678L,
-                iso8601 = "2026-07-23T09:12:25.678Z",
+                iso8601 = "2026-07-23T13:12:25.678Z",
                 elapsedRealtimeNanos = 894_512_000_000_000L,
                 wallClockOffsetMillis = 1_783_917_833_678L,
                 gpsTimeMillis = 1_784_812_345_120L,
