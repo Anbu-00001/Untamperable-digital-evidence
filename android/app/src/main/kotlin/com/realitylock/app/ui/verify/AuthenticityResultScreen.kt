@@ -260,7 +260,12 @@ private fun ChecksSection(groups: List<CheckGroup>) {
 private fun GroupCard(group: CheckGroup) {
     val colors = RealityLockThemeTokens.colors
     val style = group.state.style()
-    var expanded by rememberSaveable(group.id) { mutableStateOf(group.state != Outcome.PASS) }
+    // Keyed on the state as well as the identity: a re-verification that changes a
+    // group's state re-applies the "open if not clean" default, so a group that has
+    // just started failing cannot stay collapsed because it was clean last time.
+    var expanded by rememberSaveable(group.id, group.state) {
+        mutableStateOf(group.state != Outcome.PASS)
+    }
     val outline = if (group.state == Outcome.PASS) colors.border else style.fg.copy(alpha = 0.45f)
 
     Column(

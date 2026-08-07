@@ -1,13 +1,12 @@
 package com.realitylock.app.ui.diagnostics
 
+import android.os.Build
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
-import com.realitylock.app.ui.common.scrollableBottomInset
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -24,12 +23,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.realitylock.app.R
+import com.realitylock.app.capture.GnssCapabilityProbe
 import com.realitylock.app.core.config.AppConfig
 import com.realitylock.app.core.config.CryptoConfig
 import com.realitylock.app.core.config.ProofPackageConstants
-import com.realitylock.app.capture.GnssCapabilityProbe
 import com.realitylock.app.core.device.DeviceCapabilities
 import com.realitylock.app.crypto.AttestationProbe
+import com.realitylock.app.crypto.SigningKeyManager
+import com.realitylock.app.ui.common.scrollableBottomInset
+import com.realitylock.app.ui.theme.RealityLockTheme
+import com.realitylock.app.ui.theme.RealityLockThemeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -40,15 +43,76 @@ import kotlinx.coroutines.withContext
  * The StrongBox readout is not cosmetic — it determines whether Phase 3 can use
  * a secure-element-backed signing key or must fall back to the TEE
  * (research/02 §2), so it is worth surfacing on any device under test.
+ *
+ * ## Checks and facts are rendered differently, on purpose
+ *
+ * Half of what this screen reports is a **capability check** with an outcome
+ * (is there a camera; is StrongBox present; can the platform report raw GNSS)
+ * and half is a plain **fact** (the version string, the application id, the
+ * backend base URL, the signature algorithm name). The old layout gave both the
+ * same `label ... value` line, which made a version number look like something
+ * that had passed. It had not passed anything; it is simply what it is.
+ *
+ * So checks get the four-state pill — icon, colour and word — that authenticity
+ * reports use, and facts get a neutral monospace value chip with no icon and no
+ * status colour at all. See `DeviceStatusComponents.kt` for the reasoning and
+ * the rendering.
+ *
+ * ## When a missing capability is a FAIL and when it is only UNAVAILABLE
+ *
+ * Red is reserved for capabilities the capture pipeline genuinely cannot work
+ * without — camera, GPS, and the two motion sensors whose readings go into every
+ * proof package. Everything else that is absent reports grey `unavailable`,
+ * because it has a documented fallback or is not used yet:
+ *
+ * - **StrongBox** — absence is expected on most devices and `SigningKeyManager`
+ *   falls back to the TEE. Painting that red would cry wolf on hardware the app
+ *   fully supports.
+ * - **Raw GNSS** — the spoofing analysis is explicitly future work
+ *   (`GnssCapabilityProbe`), so its absence costs the pipeline nothing today.
+ *   Below API 31 the platform will not answer at all, which is a different
+ *   statement again and gets its own note.
+ * - **Play Integrity** — configured by a build-time project number. Not
+ *   configured is a build choice, not a device defect.
+ *
+ * Only `UNKNOWN` (violet) is left for an answer this app cannot classify, which
+ * today means a security tier outside the enum it knows.
  */
 @Composable
 fun DeviceStatusScreen(modifier: Modifier = Modifier) {
+    // The palette is a CompositionLocal with no default — reading it outside
+    // RealityLockTheme is a deliberate hard error. MainActivity still installs a
+    // bare MaterialTheme and is owned by another workstream in this change set,
+    // so this screen installs the theme over its own subtree rather than reach
+    // outside its scope. Nesting is harmless once the app-level theme lands
+    // (same palette, same values); delete this wrapper then.
+    RealityLockTheme(darkTheme = isSystemInDarkTheme()) {
+        DeviceStatusContent(modifier)
+    }
+}
+
+@Composable
+private fun DeviceStatusContent(modifier: Modifier) {
     val context = LocalContext.current
     val capabilities = remember { DeviceCapabilities(context) }
+    val gnssProbe = remember { GnssCapabilityProbe(context) }
+    val colors = RealityLockThemeTokens.colors
+
+    // Key generation touches secure hardware and can take a second, so it runs
+    // off the main thread and the screen renders without waiting.
+    var attestation by remember { mutableStateOf<AttestationProbe.Result?>(null) }
+    LaunchedEffect(Unit) {
+        attestation = withContext(Dispatchers.IO) {
+            AttestationProbe().run(
+                exportTo = java.io.File(context.filesDir, ATTESTATION_EXPORT_FILE),
+            )
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
+            .background(colors.bg)
             .verticalScroll(rememberScrollState())
             // Padding applied after verticalScroll pads the scrolled CONTENT,
             // not the viewport, so the last row can be scrolled clear of the
@@ -56,111 +120,187 @@ fun DeviceStatusScreen(modifier: Modifier = Modifier) {
             // ui/common/WindowInsetsSupport.
             .padding(16.dp)
             .padding(bottom = scrollableBottomInset()),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            stringResource(R.string.device_section_build),
-            style = MaterialTheme.typography.titleMedium,
+            LEGEND,
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.inkMuted,
         )
-        StatusRow(
-            stringResource(R.string.device_app_version),
-            stringResource(
-                R.string.device_app_version_format,
-                AppConfig.versionName,
-                AppConfig.versionCode,
+
+        DeviceSection(
+            title = stringResource(R.string.device_section_build),
+            rows = listOf(
+                DeviceRow.Fact(
+                    label = stringResource(R.string.device_app_version),
+                    value = stringResource(
+                        R.string.device_app_version_format,
+                        AppConfig.versionName,
+                        AppConfig.versionCode,
+                    ),
+                ),
+                DeviceRow.Fact(
+                    label = stringResource(R.string.device_application_id),
+                    value = AppConfig.applicationId,
+                ),
             ),
         )
-        StatusRow(stringResource(R.string.device_application_id), AppConfig.applicationId)
-        StatusRow(stringResource(R.string.device_backend_base_url), AppConfig.backendBaseUrl)
-        StatusRow(
-            stringResource(R.string.device_signature_algorithm),
-            CryptoConfig.SIGNATURE_ALGORITHM,
-        )
-        StatusRow(
-            stringResource(R.string.device_play_integrity_configured),
-            yesNo(AppConfig.isPlayIntegrityConfigured),
+
+        DeviceSection(
+            title = stringResource(R.string.device_section_capabilities),
+            rows = listOf(
+                DeviceRow.Check(
+                    label = stringResource(R.string.device_camera),
+                    status = required(capabilities.hasCamera),
+                ),
+                DeviceRow.Check(
+                    label = stringResource(R.string.device_gps),
+                    status = required(capabilities.hasGps),
+                ),
+                DeviceRow.Check(
+                    label = stringResource(R.string.device_accelerometer),
+                    status = required(capabilities.hasAccelerometer),
+                ),
+                DeviceRow.Check(
+                    label = stringResource(R.string.device_gyroscope),
+                    status = required(capabilities.hasGyroscope),
+                ),
+                DeviceRow.Check(
+                    label = stringResource(R.string.device_strongbox),
+                    status = optional(capabilities.hasStrongBox),
+                    note = if (capabilities.hasStrongBox) null else NOTE_STRONGBOX_ABSENT,
+                ),
+            ),
         )
 
-        Spacer(Modifier.height(12.dp))
-        Text(
-            stringResource(R.string.device_section_schema),
-            style = MaterialTheme.typography.titleMedium,
+        DeviceSection(
+            title = stringResource(R.string.device_section_attestation),
+            rows = attestationRows(attestation),
         )
-        Text(ProofPackageConstants.SCHEMA_URN, style = MaterialTheme.typography.bodySmall)
 
-        Spacer(Modifier.height(12.dp))
-        Text(
-            stringResource(R.string.device_section_capabilities),
-            style = MaterialTheme.typography.titleMedium,
+        val gnssSupported = gnssProbe.supportsRawMeasurements
+        val canAskForGnss = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        DeviceSection(
+            title = stringResource(R.string.device_section_gnss),
+            rows = listOf(
+                DeviceRow.Check(
+                    label = stringResource(R.string.device_gnss_raw_supported),
+                    status = optional(gnssSupported),
+                    note = when {
+                        gnssSupported -> null
+                        // Two different statements that both render grey, so the
+                        // note is what separates them: "the platform said no"
+                        // versus "the platform cannot be asked".
+                        canAskForGnss -> NOTE_GNSS_UNSUPPORTED
+                        else -> NOTE_GNSS_UNASKABLE
+                    },
+                ),
+                DeviceRow.Info(stringResource(R.string.device_gnss_note)),
+            ),
         )
-        StatusRow(stringResource(R.string.device_strongbox), yesNo(capabilities.hasStrongBox))
-        StatusRow(stringResource(R.string.device_camera), yesNo(capabilities.hasCamera))
-        StatusRow(stringResource(R.string.device_gps), yesNo(capabilities.hasGps))
-        StatusRow(
-            stringResource(R.string.device_accelerometer),
-            yesNo(capabilities.hasAccelerometer),
-        )
-        StatusRow(stringResource(R.string.device_gyroscope), yesNo(capabilities.hasGyroscope))
 
-        Spacer(Modifier.height(12.dp))
-        Text(
-            stringResource(R.string.device_section_gnss),
-            style = MaterialTheme.typography.titleMedium,
+        DeviceSection(
+            title = stringResource(R.string.device_section_schema),
+            rows = listOf(
+                DeviceRow.Fact(
+                    label = stringResource(R.string.device_backend_base_url),
+                    value = AppConfig.backendBaseUrl,
+                ),
+                DeviceRow.Fact(
+                    label = LABEL_SCHEMA_URN,
+                    value = ProofPackageConstants.SCHEMA_URN,
+                ),
+            ),
         )
-        val gnssProbe = remember { GnssCapabilityProbe(context) }
-        StatusRow(
-            stringResource(R.string.device_gnss_raw_supported),
-            yesNo(gnssProbe.supportsRawMeasurements),
-        )
-        Text(stringResource(R.string.device_gnss_note), style = MaterialTheme.typography.bodySmall)
-
-        Spacer(Modifier.height(12.dp))
-        Text(
-            stringResource(R.string.device_section_attestation),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        // Key generation touches secure hardware and can take a second, so it
-        // runs off the main thread and the screen renders without waiting.
-        var attestation by remember { mutableStateOf<AttestationProbe.Result?>(null) }
-        LaunchedEffect(Unit) {
-            attestation = withContext(Dispatchers.IO) {
-                AttestationProbe().run(
-                    exportTo = java.io.File(context.filesDir, ATTESTATION_EXPORT_FILE),
-                )
-            }
-        }
-        val result = attestation
-        if (result == null) {
-            Text(
-                stringResource(R.string.device_attestation_checking),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        } else {
-            StatusRow(stringResource(R.string.device_attestation_hardware), yesNo(result.attested))
-            StatusRow(stringResource(R.string.device_attestation_tier), result.tier.name)
-            StatusRow(
-                stringResource(R.string.device_attestation_chain_length),
-                result.chainLength.toString(),
-            )
-            Text(result.detail, style = MaterialTheme.typography.bodySmall)
-        }
     }
 }
+
+/**
+ * Rows for the attestation card, including the pre-result state.
+ *
+ * Not a composable of its own so the "checking…" placeholder and the resolved
+ * rows go through exactly the same section rendering — the card must not change
+ * shape or styling when the probe returns, only content.
+ */
+@Composable
+private fun attestationRows(result: AttestationProbe.Result?): List<DeviceRow> {
+    if (result == null) {
+        return listOf(DeviceRow.Progress(stringResource(R.string.device_attestation_checking)))
+    }
+    return listOf(
+        DeviceRow.Check(
+            label = stringResource(R.string.device_attestation_hardware),
+            // A check that ran and returned "no hardware proof" is a fail, not an
+            // unavailable: the probe answered, and the answer is a problem for a
+            // pipeline whose whole claim rests on hardware-backed keys.
+            status = if (result.attested) DeviceCheckStatus.PASS else DeviceCheckStatus.FAIL,
+        ),
+        DeviceRow.Check(
+            label = stringResource(R.string.device_attestation_tier),
+            status = when (result.tier) {
+                SigningKeyManager.SecurityTier.STRONGBOX,
+                SigningKeyManager.SecurityTier.TRUSTED_ENVIRONMENT,
+                -> DeviceCheckStatus.PASS
+                SigningKeyManager.SecurityTier.UNKNOWN -> DeviceCheckStatus.UNKNOWN
+            },
+            // The tier name is shown verbatim as well as graded: STRONGBOX and
+            // TRUSTED_ENVIRONMENT both pass, and which one it was still matters.
+            value = result.tier.name,
+        ),
+        DeviceRow.Check(
+            label = stringResource(R.string.device_play_integrity_configured),
+            status = optional(AppConfig.isPlayIntegrityConfigured),
+            note = if (AppConfig.isPlayIntegrityConfigured) null else NOTE_PLAY_INTEGRITY_UNSET,
+        ),
+        // A count and an algorithm name. Neither is a verdict, so neither wears
+        // a pill — this is the fact/check split in its clearest form, two rows
+        // below three that look completely different.
+        DeviceRow.Fact(
+            label = stringResource(R.string.device_attestation_chain_length),
+            value = result.chainLength.toString(),
+        ),
+        DeviceRow.Fact(
+            label = stringResource(R.string.device_signature_algorithm),
+            value = CryptoConfig.SIGNATURE_ALGORITHM,
+        ),
+        DeviceRow.Info(result.detail),
+    )
+}
+
+/** Present or the pipeline cannot function: absence is a genuine failure. */
+private fun required(present: Boolean): DeviceCheckStatus =
+    if (present) DeviceCheckStatus.PASS else DeviceCheckStatus.FAIL
+
+/** Present or degraded-but-fine: absence is reported grey, never red. */
+private fun optional(present: Boolean): DeviceCheckStatus =
+    if (present) DeviceCheckStatus.PASS else DeviceCheckStatus.UNAVAILABLE
 
 /** Diagnostics export; pull with `adb shell run-as <pkg> cat files/<name>`. */
 private const val ATTESTATION_EXPORT_FILE = "attestation-chain.json"
 
-@Composable
-private fun StatusRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        Text(value, style = MaterialTheme.typography.bodyMedium)
-    }
-}
+// ---------------------------------------------------------------------------
+// Copy that has no `device_*` resource yet. Kotlin constants rather than new
+// keys in `res/values/strings.xml` for one reason only: that file is being
+// edited by a parallel workstream in this change set and new keys would
+// collide. Everything with an existing resource is still read from resources.
+// Move these into strings.xml for localisation once the file is free.
+// ---------------------------------------------------------------------------
+private const val LEGEND =
+    "Checks report an outcome — pass, fail, unavailable or unknown. " +
+        "Facts are recorded values shown in monospace; they are not verdicts."
 
-@Composable
-private fun yesNo(value: Boolean): String =
-    stringResource(if (value) R.string.common_yes else R.string.common_no)
+private const val LABEL_SCHEMA_URN = "Proof package schema"
+
+private const val NOTE_STRONGBOX_ABSENT =
+    "No secure element on this device. Signing keys fall back to the TEE, " +
+        "which the pipeline fully supports."
+
+private const val NOTE_PLAY_INTEGRITY_UNSET =
+    "No cloud project number was supplied to this build."
+
+private const val NOTE_GNSS_UNSUPPORTED =
+    "The platform reports no raw measurement support on this device."
+
+private const val NOTE_GNSS_UNASKABLE =
+    "Android 12 (API 31) is required to query this; the platform cannot be asked here."
