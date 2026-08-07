@@ -3,7 +3,6 @@ package com.realitylock.app.export
 import com.realitylock.app.capture.model.CapturedEvent
 import com.realitylock.app.core.config.CaptureConfig
 import com.realitylock.app.crypto.Hashing
-import org.json.JSONException
 import org.json.JSONObject
 
 /**
@@ -168,7 +167,7 @@ class EvidenceBundle private constructor(
                     throw IllegalStateException(
                         "the stored proof package for event ${event.eventId} is not readable " +
                             "JSON, so it cannot be exported as evidence",
-                        cause as? JSONException ?: cause,
+                        cause,
                     )
                 }
             val storedEventId = parsed.optString(KEY_EVENT_ID)

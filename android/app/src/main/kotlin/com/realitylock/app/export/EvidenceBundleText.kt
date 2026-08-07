@@ -164,9 +164,15 @@ internal object EvidenceBundleText {
                 "in $MANIFEST_ENTRY_NAME. Use whichever command matches your computer:",
         )
         blank()
-        line("    Windows :  certutil -hashfile \"${bundle.mediaEntryName}\" SHA256")
-        line("    macOS   :  shasum -a 256 \"${bundle.mediaEntryName}\"")
-        line("    Linux   :  sha256sum \"${bundle.mediaEntryName}\"")
+        line("    Windows :  certutil -hashfile <file> SHA256")
+        line("    macOS   :  shasum -a 256 <file>")
+        line("    Linux   :  sha256sum <file>")
+        blank()
+        line("  ...where <file> is each of:")
+        blank()
+        line("    ${bundle.mediaEntryName}")
+        line("    ${bundle.packageEntryName}")
+        line("    $README_ENTRY_NAME")
         blank()
         paragraph(
             "  If every fingerprint matches, the files are exactly as they were when " +

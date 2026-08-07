@@ -113,14 +113,19 @@ class EvidenceBundleExporter {
 
     private companion object {
         /**
-         * Fixed modification time stamped on every entry: 1980-01-01T00:00:00,
-         * the earliest instant the ZIP format's DOS timestamp can represent, so
-         * no rounding or range clamping can shift it.
+         * Fixed modification time stamped on every entry: 1980-01-02T00:00:00Z.
          *
-         * The export time a reader should rely on is the one written into
-         * `MANIFEST.txt` and `README.txt` in ISO-8601 UTC, not a field in a
+         * A constant rather than "now", so nothing but the bundle's own contents
+         * can vary between two exports. The day chosen sits just inside the ZIP
+         * format's DOS timestamp range (which starts at 1980-01-01) with enough
+         * margin that no UTC offset from -12 to +14 pushes it below the floor and
+         * triggers a silent clamp — `ZipEntry.setTime` converts through the
+         * default zone, so the stored field is machine-local either way.
+         *
+         * The export time a reader should rely on is the ISO-8601 UTC instant
+         * written into `MANIFEST.txt` and `README.txt`, not a field in a
          * container header that copying the file around can rewrite.
          */
-        const val FIXED_ENTRY_TIME_MILLIS: Long = 315_532_800_000L
+        const val FIXED_ENTRY_TIME_MILLIS: Long = 315_619_200_000L
     }
 }
