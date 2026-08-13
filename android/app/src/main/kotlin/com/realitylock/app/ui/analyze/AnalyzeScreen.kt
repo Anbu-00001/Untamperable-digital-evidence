@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.realitylock.app.R
 import com.realitylock.app.forensics.ExifAnalyzer
+import com.realitylock.app.forensics.DeepfakeClassifier
 import com.realitylock.app.forensics.ProofLookup
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
 import androidx.compose.foundation.background
@@ -93,6 +94,7 @@ fun AnalyzeScreen(viewModel: AnalyzeViewModel, modifier: Modifier = Modifier) {
             )
 
             state.report != null -> {
+                state.classifier?.let { ClassifierCard(it) }
                 // The disclaimer sits here, immediately above the heuristics it
                 // qualifies, rather than at the top of the screen. It used to be
                 // first because ELA was first; now the definite answer leads and
@@ -285,5 +287,89 @@ private fun ProofVerdictCard(result: ProofLookup.Result) {
             color = accent,
         )
         Text(body, style = MaterialTheme.typography.bodySmall, color = colors.inkMuted)
+    }
+}
+
+/**
+ * The experimental Meso-4 result (ADR-0010).
+ *
+ * ## Why it is worded this defensively
+ *
+ * This card sits on the same screen as cryptographic results that are exact. A
+ * reader who has just been told "these bytes are unchanged since capture, signed
+ * by hardware-backed key X" will carry that register straight into whatever
+ * appears next. So this section has to work against its own surroundings:
+ *
+ *  - **No verdict.** No "fake", no "real", no percentage presented as a
+ *    probability of manipulation. The raw score is shown as a number, and the
+ *    band describes where it fell — not what it means.
+ *  - **The accuracy line is not fine print.** No accuracy has been measured on
+ *    this project's data, and that fact is given the same weight as the score.
+ *  - **"Does not affect any proof" is stated explicitly**, because proximity on a
+ *    screen implies relationship, and there is none.
+ *
+ * The no-face case is the common one and reads as a plain statement, not a
+ * failure: this model only means anything on faces, so silence is the correct
+ * output for a photograph of a street.
+ */
+@Composable
+private fun ClassifierCard(outcome: DeepfakeClassifier.Outcome) {
+    val colors = RealityLockThemeTokens.colors
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.surfaceAlt)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            stringResource(R.string.analyze_classifier_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.ink,
+        )
+
+        when (outcome) {
+            is DeepfakeClassifier.Outcome.Scored -> {
+                val (accent, bandLabel) = when (outcome.score.band) {
+                    DeepfakeClassifier.Band.LEANS_UNMANIPULATED ->
+                        colors.pass to stringResource(R.string.analyze_classifier_band_unmanipulated)
+                    DeepfakeClassifier.Band.LEANS_MANIPULATED ->
+                        colors.warn to stringResource(R.string.analyze_classifier_band_manipulated)
+                    DeepfakeClassifier.Band.INCONCLUSIVE ->
+                        colors.unknown to stringResource(R.string.analyze_classifier_band_inconclusive)
+                }
+                Text(bandLabel, style = MaterialTheme.typography.bodyMedium, color = accent)
+                Text(
+                    stringResource(
+                        R.string.analyze_classifier_score,
+                        "%.3f".format(outcome.score.realScore),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = colors.inkMuted,
+                )
+            }
+
+            DeepfakeClassifier.Outcome.NoFace -> Text(
+                stringResource(R.string.analyze_classifier_no_face),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.inkMuted,
+            )
+
+            is DeepfakeClassifier.Outcome.Unavailable -> Text(
+                stringResource(R.string.analyze_classifier_unavailable, outcome.reason),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.unavailable,
+            )
+        }
+
+        Text(
+            stringResource(R.string.analyze_classifier_caveat),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.inkMuted,
+        )
     }
 }

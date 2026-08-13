@@ -140,6 +140,15 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        // The .tflite model must reach the APK UNCOMPRESSED. LiteRT loads it by
+        // memory-mapping the asset directly out of the package, which needs the
+        // bytes stored, not deflated. Without this the interpreter fails at
+        // construction with a misleading "could not open model" — a build-packaging
+        // problem that reads as a corrupt model file.
+        noCompress += "tflite"
+    }
+
     // Source lives under src/main/kotlin (registered explicitly since Android's
     // default Kotlin source root is src/main/java).
     sourceSets["main"].kotlin.srcDir("src/main/kotlin")

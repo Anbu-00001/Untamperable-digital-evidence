@@ -8,6 +8,7 @@ import com.realitylock.app.capture.LocationSource
 import com.realitylock.app.capture.MediaFileStore
 import com.realitylock.app.capture.SensorSnapshotCollector
 import com.realitylock.app.forensics.ForensicAnalyzer
+import com.realitylock.app.forensics.DeepfakeClassifier
 import com.realitylock.app.forensics.ProofLookup
 import com.realitylock.app.capture.store.EventRepository
 import com.realitylock.app.capture.store.FileEventRepository
@@ -203,6 +204,19 @@ class AppContainer(context: Context) {
      * still has no route into the signing pipeline.
      */
     fun createProofLookup(): ProofLookup = ProofLookup(eventRepository)
+
+    /**
+     * The experimental Meso-4 classifier (ADR-0010), or null when the bundled
+     * model cannot be opened.
+     *
+     * Nullable rather than throwing: this is an optional stretch-goal extra, and
+     * an app that refused to start because a Phase 7 model was unreadable would
+     * have its priorities inverted. The Analyze screen simply omits the section.
+     *
+     * Like the analyzer above it receives only a Context — no repository, no
+     * signer — so a classifier score has no route into a proof package.
+     */
+    fun createDeepfakeClassifier(): DeepfakeClassifier? = DeepfakeClassifier.create(appContext)
 
     /** Opens a user-picked content URI. Keeps the Context out of the ViewModel. */
     fun openInputStream(uri: android.net.Uri): java.io.InputStream? =

@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.realitylock.app.core.di.AppContainer
+import android.graphics.BitmapFactory
+import com.realitylock.app.forensics.DeepfakeClassifier
 import com.realitylock.app.forensics.ForensicAnalyzer
 import com.realitylock.app.forensics.ProofLookup
 import java.io.InputStream
@@ -37,6 +39,8 @@ class AnalyzeViewModel(
     private val analyzer: ForensicAnalyzer,
     private val proofLookup: ProofLookup,
     private val openStream: (Uri) -> InputStream?,
+    /** Null when the bundled model could not be opened; the section is omitted. */
+    private val classifier: DeepfakeClassifier? = null,
 ) : ViewModel() {
 
     data class UiState(
@@ -47,6 +51,8 @@ class AnalyzeViewModel(
          */
         val proof: ProofLookup.Result? = null,
         val report: ForensicAnalyzer.AuthenticityReport? = null,
+        /** Experimental Meso-4 outcome (ADR-0010); null while unrun or unavailable. */
+        val classifier: DeepfakeClassifier.Outcome? = null,
         val error: String? = null,
     )
 
@@ -54,7 +60,9 @@ class AnalyzeViewModel(
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     fun analyze(uri: Uri) {
-        _uiState.update { it.copy(analyzing = true, error = null, report = null, proof = null) }
+        _uiState.update {
+            it.copy(analyzing = true, error = null, report = null, proof = null, classifier = null)
+        }
         viewModelScope.launch {
             // The proof lookup lands first and separately. It is a hash and a
             // list scan — fast, and it cannot fail the way decoding can — so the
@@ -70,6 +78,34 @@ class AnalyzeViewModel(
             }.onFailure { t ->
                 _uiState.update { it.copy(analyzing = false, error = t.message) }
             }
+
+            // Last, and never allowed to affect anything above it. The classifier
+            // is a labelled-experimental extra; if it throws, the screen still
+            // shows the proof answer and the ELA report.
+            classifier?.let { model ->
+                val outcome = withContext(Dispatchers.IO) {
+                    runCatching {
+                        // Decoded at FULL size, deliberately. Every resampling step
+                        // changes this model's output — a bilinear resize alone
+                        // moves it by 0.028 — so the image reaches the classifier
+                        // through exactly one nearest-neighbour resize, the way the
+                        // reference scores were measured.
+                        val bitmap = openStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                            ?: return@runCatching DeepfakeClassifier.Outcome
+                                .Unavailable("the image could not be opened")
+                        try {
+                            model.classify(bitmap)
+                        } finally {
+                            bitmap.recycle()
+                        }
+                    }.getOrElse { t ->
+                        DeepfakeClassifier.Outcome.Unavailable(
+                            t.message ?: "the classifier could not run",
+                        )
+                    }
+                }
+                _uiState.update { it.copy(classifier = outcome) }
+            }
         }
     }
 
@@ -82,6 +118,7 @@ class AnalyzeViewModel(
                 analyzer = container.createForensicAnalyzer(),
                 proofLookup = container.createProofLookup(),
                 openStream = container::openInputStream,
+                classifier = container.createDeepfakeClassifier(),
             ) as T
         }
     }

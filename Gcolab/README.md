@@ -1,7 +1,15 @@
 # `meso4_df.tflite` — provenance and verified facts
 
 Produced by `research/mesonet_to_tflite.ipynb` on Google Colab, 2026-08-13.
-**Not yet used by the app.** See "Before integrating" below.
+
+**The shipped copy lives at `android/app/src/main/assets/meso4_df.tflite`** and is
+the one under version control; this folder holds the original download. The
+integration is ADR-0010.
+
+Note that `.gitignore` excludes `*.tflite` wholesale, so the shipped asset needed
+an explicit negation — the same trap `*.pem` sprang on the Google attestation
+roots, and a quieter one here: without it `create()` returns null and the Analyze
+screen simply omits the section, with no error anywhere.
 
 ## What this file is
 

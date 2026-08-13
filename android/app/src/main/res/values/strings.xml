@@ -335,4 +335,16 @@
     <string name="device_section_gnss">GNSS integrity (Phase 4)</string>
     <string name="device_gnss_raw_supported">Raw GNSS measurements supported</string>
     <string name="device_gnss_note">Raw-signal spoofing analysis (C/N0, AGC) is future work; only the capability is probed today.</string>
+
+    <!-- Experimental Meso-4 classifier (ADR-0010). Wording is load-bearing: this
+         card sits beside exact cryptographic results, and must not borrow their
+         authority. No verdict language anywhere. -->
+    <string name="analyze_classifier_title">Experimental: deepfake classifier</string>
+    <string name="analyze_classifier_band_unmanipulated">Consistent with an unmanipulated face</string>
+    <string name="analyze_classifier_band_manipulated">Shows patterns this model associates with face manipulation</string>
+    <string name="analyze_classifier_band_inconclusive">Inconclusive — the model does not lean either way</string>
+    <string name="analyze_classifier_score">Model output: %1$s (1.000 = unmanipulated, 0.000 = manipulated)</string>
+    <string name="analyze_classifier_no_face">No face found, so this model was not run. It was trained only on faces and has no meaning for other subjects.</string>
+    <string name="analyze_classifier_unavailable">Could not run: %1$s</string>
+    <string name="analyze_classifier_caveat">Meso-4 (Afchar et al., 2018), using the authors\' published weights. Its accuracy has NOT been measured on this project\'s data, so this number is not evidence of anything on its own. It does not affect any proof, certificate or verification result.</string>
 </resources>

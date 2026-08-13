@@ -44,6 +44,107 @@ Thumbs.db
 # adding any further exception here.
 !backend/data/google-attestation-roots.pem
 
+# ---------------------------------------------------------------------------
+# Photographs, screenshots, screen recordings — DENY BY DEFAULT
+# ---------------------------------------------------------------------------
+# This is an evidence app, so ordinary development means pulling real captures,
+# screenshots and exported bundles off a real handset — and every one of those is
+# a photograph of someone's actual surroundings, carrying full-precision GPS and
+# a device serial in EXIF. Two properties make this worth a blanket rule rather
+# than care:
+#
+#   1. It is irreversible. `git rm` in a later commit leaves the photo in
+#      history, on every clone, fork and mirror. There is no fixing it after a
+#      push, only rewriting history everyone else has already pulled.
+#   2. It is silent. A stray `adb pull` into the repo root is one line in
+#      `git status` among many, and `git add -A` takes it without comment.
+#
+# Committed images are therefore listed by EXACT PATH below, never by folder
+# glob. `androidTest/assets/*.jpg` would silently re-admit anything later dropped
+# in that folder, which is the accident this section exists to prevent. Adding a
+# fixture is meant to cost one deliberate line here — and that line is the place
+# to record that you checked what is inside it.
+#
+# The bracket syntax is not decoration. gitignore patterns are case-SENSITIVE
+# (core.ignorecase is false on Linux), and a plain `*.jpg` does not match
+# `IMG_4821.JPG` — which is what iPhones, DSLRs and most card readers actually
+# write. `*.heic` missing `.HEIC` was a live hole in this section when it was
+# first written, caught only by testing the rules against realistic filenames.
+# `[jJ][pP][gG]` covers every casing, including mixed, with one pattern.
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+*.[pP][nN][gG]
+*.[gG][iI][fF]
+*.[bB][mM][pP]
+*.[wW][eE][bB][pP]
+*.[aA][vV][iI][fF]
+*.[tT][iI][fF]
+*.[tT][iI][fF][fF]
+*.[hH][eE][iI][cC]
+*.[hH][eE][iI][fF]
+# Raw formats: phones increasingly write these alongside the JPEG, and they are
+# larger, un-viewable in a diff, and carry the same EXIF.
+*.[dD][nN][gG]
+*.[cC][rR]2
+*.[nN][eE][fF]
+*.[aA][rR][wW]
+*.[rR][aA][fF]
+*.[oO][rR][fF]
+# Video: screen recordings of the capture flow, and anything the camera shot.
+*.[mM][pP]4
+*.[mM][oO][vV]
+*.[aA][vV][iI]
+*.[mM][kK][vV]
+*.[wW][eE][bB][mM]
+*.3[gG][pP]
+
+# Exported evidence bundles: a ZIP whose entire purpose is to carry the
+# photograph and its signed package together. Pulled off the device constantly
+# while testing the backup path. No .zip is tracked in this repo (the Gradle
+# wrapper is a .jar and is unaffected).
+*.[zZ][iI][pP]
+
+# The photo's sidecar. Captures are stored as `<eventId>.jpg` + `<eventId>.json`
+# where eventId is a `UUID.randomUUID()` (CaptureCoordinator), so the same
+# `adb pull` that grabs a photograph grabs a proof package holding FULL-precision
+# GPS — arguably the more sensitive half, and the half that does not look like an
+# image in `git status`.
+#
+# The pattern matches the three fixed 4-hex-digit groups of a UUID rather than
+# `*-*-*-*-*.json`, which was tried first and hit the deliberate, committed
+# `docs/evidence/2026-07-24-after-clockbase-fix.json`. Lowercase only is correct:
+# Java's UUID.toString() is lowercase by definition. Curated evidence samples with
+# human-readable names are unaffected, which is the intended split — a file someone
+# named on purpose is reviewed, a UUID-named one fell off a device.
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*.json
+
+# --- Allowed: synthetic or public test fixtures ----------------------------
+# Everything below was checked before being un-ignored, the same way the .pem
+# above was.
+#
+# Phase 4 forensics — generated from a single base capture by the ImageMagick
+# recipe recorded in docs/evidence/phase4-forensics/README.md, which is why the
+# same OPPO EXIF block appears in all of them. Verified: 0 GPS tags in each.
+!docs/evidence/phase4-forensics/authentic.jpg
+!docs/evidence/phase4-forensics/edited_photoshop.jpg
+!docs/evidence/phase4-forensics/spliced_final.jpg
+!docs/evidence/phase4-forensics/spliced_ela_heatmap.png
+
+# The same fixtures bundled as instrumented-test assets for ForensicInstrumentedTest.
+!android/app/src/androidTest/assets/rl_authentic.jpg
+!android/app/src/androidTest/assets/rl_photoshop.jpg
+!android/app/src/androidTest/assets/rl_spliced.jpg
+
+# MesoNet reference images (DariusAf/MesoNet, Apache-2.0) — the authors' own four
+# published samples, and the only labelled images this project has. Required by
+# DeepfakeClassifierInstrumentedTest, which asserts the model's convention is not
+# inverted (ADR-0010); without them that test cannot run and an inverted model
+# would read as a working one. Verified: 0 EXIF tags of any kind in each.
+!android/app/src/androidTest/assets/df00204.jpg
+!android/app/src/androidTest/assets/df01254.jpg
+!android/app/src/androidTest/assets/real00240.jpg
+!android/app/src/androidTest/assets/real00772.jpg
+
 # Android & Gradle
 .gradle/
 .kotlin/
@@ -87,6 +188,16 @@ env/
 *.onnx
 *.pt
 *.h5
+
+# ...but the bundled Meso-4 classifier is a SHIPPED ASSET, not a scratch artifact,
+# and `*.tflite` above was silently excluding it. Exactly the failure `*.pem` caused
+# with the Google attestation roots: the build works for whoever generated the file
+# and breaks for everyone who clones, here as a silent one — `create()` returns null
+# and the Analyze screen just omits the section, with no error anywhere.
+#
+# 116 KiB, derived from DariusAf/MesoNet's published weights (Apache-2.0), and
+# reproducible from research/mesonet_to_tflite.ipynb. See ADR-0010 and Gcolab/README.md.
+!android/app/src/main/assets/meso4_df.tflite
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
