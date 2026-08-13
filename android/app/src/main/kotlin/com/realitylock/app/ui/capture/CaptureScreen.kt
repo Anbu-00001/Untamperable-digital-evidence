@@ -36,6 +36,7 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -139,22 +140,22 @@ fun CaptureScreen(
             Tab(
                 selected = selectedTab == 0,
                 onClick = { selectedTab = 0 },
-                text = { Text(stringResource(R.string.tab_capture)) },
+                text = { TabLabel(stringResource(R.string.tab_capture)) },
             )
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
-                text = { Text(stringResource(R.string.tab_history, uiState.events.size)) },
+                text = { TabLabel(stringResource(R.string.tab_history)) },
             )
             Tab(
                 selected = selectedTab == 2,
                 onClick = { selectedTab = 2 },
-                text = { Text(stringResource(R.string.tab_analyze)) },
+                text = { TabLabel(stringResource(R.string.tab_analyze)) },
             )
             Tab(
                 selected = selectedTab == 3,
                 onClick = { selectedTab = 3 },
-                text = { Text(stringResource(R.string.tab_device)) },
+                text = { TabLabel(stringResource(R.string.tab_device)) },
             )
         }
 
@@ -521,6 +522,21 @@ private fun HistoryTab(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // The capture count, which used to live in the tab label as
+        // "History (3)". Four fixed tabs get about 90dp each and that form did
+        // not fit at any readable size — it wrapped to two lines, then
+        // ellipsised to "History…" and hid the number entirely. A Material
+        // badge fixed the width but sat on top of the word and, being red,
+        // read as an alert rather than a count. Here there is room, and this is
+        // the screen the number is actually about.
+        item {
+            Text(
+                text = if (events.size == 1) "1 capture" else "${events.size} captures",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         item {
             SyncSummaryPanel(
                 syncRequested = proofsState.syncRequested,
@@ -930,3 +946,27 @@ private const val PREVIEW_ASPECT_RATIO = 3f / 4f
 private const val EVENT_ID_PREVIEW_LENGTH = 8
 private const val MILLIS_PER_SECOND = 1_000L
 private const val HASH_PREVIEW_LENGTH = 16
+
+/**
+ * A tab label that cannot wrap.
+ *
+ * Four fixed tabs share the width, so each gets a quarter of it — 90dp on a
+ * 360dp-wide phone. "History (12)" does not fit that at the default `titleSmall`
+ * used by `Tab`, and Compose's answer to not fitting is to wrap: the History tab
+ * rendered as two lines while its three neighbours rendered as one, pushing the
+ * whole row taller and misaligning every label.
+ *
+ * `maxLines = 1` makes that impossible rather than unlikely, and the smaller
+ * style is what makes the longest realistic label fit inside one line instead of
+ * being ellipsised. The count stays in the label — it is the one number worth
+ * seeing without opening the tab.
+ */
+@Composable
+private fun TabLabel(text: String) {
+    Text(
+        text = text,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        style = MaterialTheme.typography.labelLarge,
+    )
+}

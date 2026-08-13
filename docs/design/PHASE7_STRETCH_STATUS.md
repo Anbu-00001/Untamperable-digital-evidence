@@ -20,13 +20,14 @@ external accounts or assets**. Each carries its reason below.
 |---|---|---|
 | Section 63 (BSA) certificate template | **Built** — content **and** PDF, exported from the UI | Pure Kotlin, no new dependencies; renderer verified on hardware |
 | OpenTimestamps anchoring | **Rejected on evidence** | Package carries 2 unfixable critical CVEs — see ADR-0002 |
+| **RFC 3161 time anchoring** | **Built** (2026-08-07) | Replaces OpenTimestamps as the independent time anchor — see ADR-0009 |
 | Bystander privacy — capture indicator | **Built** | On-screen notice under the live preview, exactly as research/06 §3.2 asks |
 | Bystander privacy — face blur | **Declined, with reasons** | Conflicts with the proof model; see below |
 | WiFi/cell-tower cross-check | **Declined, with reasons** | Buys little, costs invasive permissions; see below |
 | PRNU offline demo | Not built | Research-grade; needs a camera-specific corpus the project must not fabricate |
 | C2PA manifest export | Not built | Real value, large surface; the honest next candidate |
 | Polygon Amoy contract | **Blocked** | Needs a funded testnet wallet — an account, not code |
-| TFLite MesoNet classifier | **Blocked** | Needs a trained model file that cannot be fabricated |
+| TFLite MesoNet classifier | **Unblocked, needs one Colab run** | `research/mesonet_to_tflite.ipynb` builds it from the authors' published weights |
 
 ### The 2026-08-06 re-assessment
 
@@ -113,14 +114,29 @@ This does not overturn the strategy. The `anchors.openTimestamps` schema slot is
 untouched, and the paths forward (implement the calendar protocol directly,
 vendor and patch, or wait) are recorded in the ADR.
 
-### The claim this leaves unmade
+### ~~The claim this leaves unmade~~ — closed 2026-08-07 by ADR-0009
 
-Worth stating plainly, because the s.63 annexure could otherwise be read as
-covering it: the annexure states a hash value and algorithm **from this project's
-own Merkle root**. That is not an independent time anchor. A third party still
-has only the device's word for *when* a capture happened. RFC 3161 and
-OpenTimestamps are both unimplemented, and nothing built in Phase 7 substitutes
-for them.
+This section recorded the largest remaining hole in the system:
+
+> the annexure states a hash value and algorithm **from this project's own Merkle
+> root**. That is not an independent time anchor. A third party still has only the
+> device's word for *when* a capture happened.
+
+**RFC 3161 anchoring now closes half of it**, and the half it closes is worth
+being precise about. A TSA token proves the Merkle root existed **no later than**
+the authority's `genTime`; it does not prove the capture happened *at* the
+claimed time. So the system gained one new evidentiary property — an independent
+upper bound — and one new check that can contradict a device clock with evidence
+rather than suspicion (`captureTimeNotAfterAnchor`).
+
+The token verifies with stock tooling, which is the point of choosing a standard:
+
+```
+openssl ts -verify -digest <merkle.root> -in token.tsr -CAfile <ca-bundle>
+```
+
+OpenTimestamps remains unimplemented and its schema slot untouched. Nothing here
+anchors to a blockchain, and no claim in the system says otherwise.
 
 Had OpenTimestamps been wired up, the same care would have been needed at the
 other end: a freshly created stamp is a **pending calendar attestation, not a
@@ -261,10 +277,38 @@ decision recorded first.
 
 ---
 
-## Blocked: Polygon Amoy and TFLite MesoNet
+## Polygon Amoy — still blocked, and the blocker is not the wallet
 
-These two are not decisions. **Polygon Amoy** anchoring needs a funded testnet
-wallet — an account and a faucet, not code. **TFLite MesoNet** needs a trained
-model file; the plumbing is straightforward and the model cannot be invented,
-and a classifier shipped with an unvalidated model would carry the highest
-overclaim risk in the whole list.
+Re-examined 2026-08-07. The wallet was never the hard part: generating one is
+free, offline and open-source (`cast wallet new` from Foundry, or ethers.js
+`Wallet.createRandom()`), with no custody service involved.
+
+**The blocker is the faucet.** Every current Amoy faucet gates on a *mainnet*
+balance as anti-spam — Alchemy on ~0.001 ETH, GetBlock on ~0.005, Chainstack on
+~0.08 — and the official Polygon faucet is retired. So obtaining test POL costs
+real money on Ethereum mainnet, however small. That is an account problem, not an
+engineering one, and it is not worth solving for a feature the PPT itself lists
+as "Future" and which the core proof does not depend on.
+
+Worth noting the design question it would raise anyway: an on-chain anchor and an
+RFC 3161 token prove the *same* thing — that a digest existed by some time. Now
+that ADR-0009 provides that property with no account, no funding and no
+per-anchor cost, a chain anchor adds decentralised custody of the timestamp
+rather than a new claim. Real, but a smaller increment than it looked before.
+
+## TFLite MesoNet — unblocked, needs one Colab run
+
+`research/mesonet_to_tflite.ipynb` converts Meso-4 to TFLite from the authors'
+own published `Meso4_DF.h5` weights, so nothing is fabricated. It asserts the
+architecture matches the weights by parameter count, confirms the label
+convention against the authors' four sample images (higher score = more real —
+inverting it would flip every prediction while still looking plausible), and
+measures max output divergence between the Keras and TFLite models.
+
+**It deliberately produces no accuracy figure by default.** The repository ships
+four test images; four images cannot support an accuracy claim, since a coin flip
+scores 4/4 about 6% of the time. The notebook's evaluation section requires a
+labelled dataset the user supplies, and prints an explicit refusal when none is
+given. That keeps the highest overclaim risk in the whole Phase 7 list — a
+classifier labelled with an accuracy nobody measured — structurally impossible to
+reach by accident.

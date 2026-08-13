@@ -227,6 +227,15 @@ dependencies {
     // EXIF-consistency forensic checks on candidate images (Phase 4).
     implementation(libs.androidx.exifinterface)
 
+    // On-device inference for the experimental Meso-4 deepfake classifier
+    // (ADR-0010). LiteRT is the renamed TensorFlow Lite runtime; the old
+    // org.tensorflow:tensorflow-lite coordinates stopped receiving releases at
+    // 2.17.0. Runtime only — no support/metadata library, because the model has
+    // no embedded metadata and its pre/post-processing is deliberately hand
+    // written so the resampling filter is pinned in our own code (see
+    // DeepfakeClassifier).
+    implementation(libs.litert)
+
     // Storage Access Framework tree access, for the durable backup destination.
     // The app's own filesDir copy dies with an uninstall or a "clear data" tap —
     // so a second copy is only a backup if it lives somewhere the app does not

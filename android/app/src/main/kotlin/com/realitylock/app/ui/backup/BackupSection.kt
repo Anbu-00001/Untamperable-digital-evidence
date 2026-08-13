@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
@@ -62,6 +63,14 @@ fun BackupSection(viewModel: BackupViewModel, modifier: Modifier = Modifier) {
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri -> if (uri != null) viewModel.onDestinationChosen(uri) }
+
+    // Re-read on every entry into composition, i.e. every time the Device tab is
+    // opened. Without this the counts are whatever they were when the ViewModel
+    // was constructed — which is app start, before any capture exists — so the
+    // section sat there reading "No captures yet" with captures on disk. A
+    // backup UI that under-reports is the exact failure this feature exists to
+    // prevent, so it re-reads rather than trusting a cached number.
+    LaunchedEffect(Unit) { viewModel.refresh() }
 
     Column(
         modifier = modifier
@@ -125,11 +134,9 @@ fun BackupSection(viewModel: BackupViewModel, modifier: Modifier = Modifier) {
         } else {
             val allDone = state.totalEvents > 0 && state.backedUp == state.totalEvents
             StatusLine(
-                text = when {
-                    state.totalEvents == 0 -> "No captures yet."
-                    allDone -> "${state.backedUp} of ${state.totalEvents} captures backed up."
-                    else -> "${state.backedUp} of ${state.totalEvents} captures backed up."
-                },
+                text =
+                    if (state.totalEvents == 0) "No captures yet."
+                    else "${state.backedUp} of ${state.totalEvents} captures backed up.",
                 color = if (allDone) colors.pass else colors.warn,
             )
         }

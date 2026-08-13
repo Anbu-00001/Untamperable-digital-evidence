@@ -1,6 +1,7 @@
-# Claude configuration directory
+# Claude / tool configuration directories
 .claude/
 .serena/
+.codegraph/
 
 
 # IDE / System files
@@ -13,6 +14,11 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Office / binary documents
+*.pptx
+*.docx
+*.xlsx
 
 # Local configuration/credentials
 .env
@@ -75,6 +81,15 @@ env/
 # Logs and databases
 *.log
 *.sqlite
+
+# ML model binaries
+*.tflite
+*.onnx
+*.pt
+*.h5
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
 
 
 # Phase-5 backend store (filesystem driver default)

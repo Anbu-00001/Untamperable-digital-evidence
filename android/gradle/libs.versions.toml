@@ -80,6 +80,10 @@ playIntegrity = "1.6.0"             # Play Integrity API (successor to the dead 
 jsonCanonicalization = "1.1"        # io.github.erdtman — RFC 8785 JCS canonical JSON
 exifInterface = "1.4.2"             # androidx.exifinterface — EXIF forensic checks (Phase 4)
 documentFile = "1.1.0"              # androidx.documentfile — SAF tree access for durable backup
+# LiteRT — the renamed successor to org.tensorflow:tensorflow-lite, which stopped
+# at 2.17.0. Runs the experimental Meso-4 classifier (ADR-0010). Version read
+# from Google's Maven, not Maven Central, which does not carry it.
+litert = "2.1.6"
 
 # --- Verification UI (Phase 5) ---
 # zxing CORE only, not journeyapps/zxing-android-embedded (ADR-0006 §4).
@@ -164,6 +168,7 @@ play-integrity = { group = "com.google.android.play", name = "integrity", versio
 json-canonicalization = { group = "io.github.erdtman", name = "java-json-canonicalization", version.ref = "jsonCanonicalization" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifInterface" }
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentFile" }
+litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
 
 # --- Verification UI ---
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
