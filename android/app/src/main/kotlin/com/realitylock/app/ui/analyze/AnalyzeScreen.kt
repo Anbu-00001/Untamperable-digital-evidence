@@ -20,10 +20,15 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.realitylock.app.forensics.PlainLanguage
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -52,6 +57,16 @@ import androidx.compose.ui.text.font.FontWeight
 @Composable
 fun AnalyzeScreen(viewModel: AnalyzeViewModel, modifier: Modifier = Modifier) {
     val state by viewModel.uiState.collectAsState()
+
+    // Defaults ON, which is the whole point: the reader who needs the explanation
+    // is exactly the reader who would not know to go looking for a switch. Someone
+    // fluent in ELA can turn it off once; someone who is not would otherwise be
+    // left inventing a meaning for "max error 47", and the meaning people invent
+    // on a screen about faked photographs is never the reassuring one.
+    //
+    // rememberSaveable so the choice survives rotation and process death — having
+    // to turn it off again after every rotation would be its own small insult.
+    var plainEnglish by rememberSaveable { mutableStateOf(true) }
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent(),
@@ -94,13 +109,18 @@ fun AnalyzeScreen(viewModel: AnalyzeViewModel, modifier: Modifier = Modifier) {
             )
 
             state.report != null -> {
-                state.classifier?.let { ClassifierCard(it) }
+                PlainEnglishToggle(
+                    checked = plainEnglish,
+                    onCheckedChange = { plainEnglish = it },
+                )
+                state.classifier?.let { ClassifierCard(it, plainEnglish) }
                 // The disclaimer sits here, immediately above the heuristics it
                 // qualifies, rather than at the top of the screen. It used to be
                 // first because ELA was first; now the definite answer leads and
                 // the caveat belongs with the thing being caveated.
                 DisclaimerCard()
-                ReportView(state.report!!)
+                ReportView(state.report!!, plainEnglish)
+                if (plainEnglish) GlossaryCard()
             }
         }
     }
@@ -125,8 +145,96 @@ private fun DisclaimerCard() {
     }
 }
 
+/**
+ * The switch that turns every technical line on this screen into ordinary English.
+ *
+ * A single screen-level control rather than a "what does this mean?" expander on
+ * each section. Per-section expanders sound more discoverable and are not: they
+ * ask the reader to admit, one section at a time, that they did not follow it.
+ * One switch asks once.
+ */
 @Composable
-private fun ReportView(report: com.realitylock.app.forensics.ForensicAnalyzer.AuthenticityReport) {
+private fun PlainEnglishToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val colors = RealityLockThemeTokens.colors
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            stringResource(R.string.analyze_plain_english),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.ink,
+        )
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/**
+ * One plain-English passage, set apart from the finding it explains.
+ *
+ * Indented and muted on purpose: it must read as an aside about the result rather
+ * than as another result. Same-weight body text next to a measurement is how you
+ * end up with people quoting the explanation as though it were a finding.
+ */
+@Composable
+private fun Explainer(text: String) {
+    val colors = RealityLockThemeTokens.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.surfaceAlt)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.inkMuted,
+        )
+    }
+}
+
+/** The handful of words the screen uses that a reader has no reason to know. */
+@Composable
+private fun GlossaryCard() {
+    val colors = RealityLockThemeTokens.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.surfaceAlt)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            stringResource(R.string.analyze_glossary_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.ink,
+        )
+        PlainLanguage.glossary.forEach { entry ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    entry.term,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.ink,
+                )
+                Text(
+                    entry.meaning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.inkMuted,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReportView(
+    report: com.realitylock.app.forensics.ForensicAnalyzer.AuthenticityReport,
+    plainEnglish: Boolean,
+) {
     // Source and ELA map, side by side, so "compare edges with edges" is natural.
     Text(stringResource(R.string.analyze_ela_title), style = MaterialTheme.typography.titleMedium)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -160,6 +268,16 @@ private fun ReportView(report: com.realitylock.app.forensics.ForensicAnalyzer.Au
         fontFamily = FontFamily.Monospace,
     )
     Text(stringResource(R.string.analyze_ela_note), style = MaterialTheme.typography.bodySmall)
+    if (plainEnglish) {
+        Spacer(Modifier.height(4.dp))
+        Explainer(
+            PlainLanguage.ela(
+                resaveQuality = report.ela.resaveQuality,
+                maxError = report.ela.maxError,
+                meanError = report.ela.meanError,
+            ),
+        )
+    }
 
     Spacer(Modifier.height(8.dp))
 
@@ -175,11 +293,23 @@ private fun ReportView(report: com.realitylock.app.forensics.ForensicAnalyzer.Au
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+            // Each flag gets its explanation directly beneath it rather than
+            // pooled at the end. A flag reads as an accusation until you know
+            // how ordinary its innocent causes are, and that has to arrive
+            // attached to the specific flag, not several lines later.
+            if (plainEnglish) {
+                Explainer(PlainLanguage.exifFlag(finding.code))
+                Spacer(Modifier.height(4.dp))
+            }
         }
     }
     // Descriptive facts (never framed as a verdict).
     ExifFacts(report.exif)
     Text(stringResource(R.string.analyze_exif_note), style = MaterialTheme.typography.bodySmall)
+    if (plainEnglish) {
+        Spacer(Modifier.height(4.dp))
+        Explainer(PlainLanguage.exif(report.exif))
+    }
 }
 
 @Composable
@@ -313,7 +443,7 @@ private fun ProofVerdictCard(result: ProofLookup.Result) {
  * output for a photograph of a street.
  */
 @Composable
-private fun ClassifierCard(outcome: DeepfakeClassifier.Outcome) {
+private fun ClassifierCard(outcome: DeepfakeClassifier.Outcome, plainEnglish: Boolean) {
     val colors = RealityLockThemeTokens.colors
 
     Column(
@@ -351,13 +481,17 @@ private fun ClassifierCard(outcome: DeepfakeClassifier.Outcome) {
                     fontFamily = FontFamily.Monospace,
                     color = colors.inkMuted,
                 )
+                if (plainEnglish) Explainer(PlainLanguage.classifierScore(outcome.score.realScore))
             }
 
-            DeepfakeClassifier.Outcome.NoFace -> Text(
-                stringResource(R.string.analyze_classifier_no_face),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.inkMuted,
-            )
+            DeepfakeClassifier.Outcome.NoFace -> {
+                Text(
+                    stringResource(R.string.analyze_classifier_no_face),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.inkMuted,
+                )
+                if (plainEnglish) Explainer(PlainLanguage.classifierNoFace())
+            }
 
             is DeepfakeClassifier.Outcome.Unavailable -> Text(
                 stringResource(R.string.analyze_classifier_unavailable, outcome.reason),

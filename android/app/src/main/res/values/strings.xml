@@ -76,6 +76,8 @@
     <string name="analyze_disclaimer_title">Triage aid — not a verdict</string>
     <string name="analyze_disclaimer_body">These heuristics run on any image you pick, to help you look closer. They cannot prove an image is real or fake. Bright ELA regions and metadata flags raise questions, not answers — high-contrast edges are naturally bright, and metadata can be edited or stripped. This does not sign or store anything.</string>
     <string name="analyze_pick_image">Pick an image to analyze</string>
+    <string name="analyze_plain_english">Explain in plain English</string>
+    <string name="analyze_glossary_title">Words used on this screen</string>
     <string name="analyze_running">Analyzing…</string>
     <string name="analyze_source">Source</string>
     <string name="analyze_ela_title">Error Level Analysis</string>
