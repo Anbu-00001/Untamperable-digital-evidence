@@ -1,6 +1,9 @@
 package com.realitylock.app.ui.verify
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,7 +21,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -36,6 +42,7 @@ import com.realitylock.app.ui.theme.RealityLockTheme
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
 import com.realitylock.app.verify.VerificationReport
 import com.realitylock.app.verify.VerificationReport.Outcome
+import kotlinx.coroutines.delay
 
 /**
  * The "Authenticity Result" surface from Slide 9 — a verdict **and** the per-check
@@ -68,6 +75,8 @@ fun AuthenticityResultPanel(
     report: VerificationReport,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The report came from the on-device verifier, not the backend; see ProofsViewModel.verifyOffline. */
+    checkedOnDevice: Boolean = false,
 ) {
     // The status palette lives behind a CompositionLocal with no default -- reading
     // it outside a provider throws by design. The host currently wraps the app in a
@@ -79,6 +88,19 @@ fun AuthenticityResultPanel(
     RealityLockTheme(darkTheme = dark) {
         val colors = RealityLockThemeTokens.colors
         val groups = groupChecks(report.checks)
+        // Staged reveal: the chain's links, then the group cards, appear one after
+        // another. Every item appears in its FINAL state — this orders results the
+        // verifier already returned; it does not pretend to compute them. Keyed on
+        // the report, so a re-verification replays it, and short enough (~0.9 s)
+        // that nobody waits on it.
+        val totalSteps = PROOF_CHAIN_REVEAL_STEPS + groups.size
+        var revealed by remember(report) { mutableIntStateOf(0) }
+        LaunchedEffect(report) {
+            while (revealed < totalSteps) {
+                delay(REVEAL_STEP_MILLIS)
+                revealed++
+            }
+        }
         Card(
             modifier = modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = colors.surface),
@@ -107,11 +129,27 @@ fun AuthenticityResultPanel(
                     }
                 }
 
-                VerdictBlock(report.verdict)
+                // Above the verdict, not in the limitations: the source of a
+                // verdict changes what the verdict means, so it is read first.
+                if (checkedOnDevice) {
+                    Text(
+                        stringResource(R.string.verify_offline_badge),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.ink,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(colors.unavailableSoft, RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                    )
+                }
+
+                VerdictBlock(report.verdict, checkedOnDevice)
+
+                ProofChainDiagram(report, revealed = revealed)
 
                 report.merkleRoot?.let { root -> MerkleRootLine(root) }
 
-                ChecksSection(groups)
+                ChecksSection(groups, revealedGroups = revealed - PROOF_CHAIN_REVEAL_STEPS)
 
                 // Amber, filled, exclamation-marked: seen at a glance, but worded
                 // and coloured so it cannot be mistaken for a failure.
@@ -150,7 +188,7 @@ fun AuthenticityResultPanel(
  * almost everyone, so the caution line states outright that it is not a pass.
  */
 @Composable
-private fun VerdictBlock(verdict: VerificationReport.Verdict) {
+private fun VerdictBlock(verdict: VerificationReport.Verdict, checkedOnDevice: Boolean) {
     val colors = RealityLockThemeTokens.colors
     val style = verdict.style()
     Column(
@@ -181,7 +219,16 @@ private fun VerdictBlock(verdict: VerificationReport.Verdict) {
                     color = style.fg,
                 )
                 Text(
-                    stringResource(verdict.bodyRes()),
+                    stringResource(
+                        // The server-side INCOMPLETE text blames missing media and
+                        // says "sync and verify again" — false for an on-device
+                        // check, whose ceiling is INCOMPLETE by construction.
+                        if (checkedOnDevice && verdict == VerificationReport.Verdict.INCOMPLETE) {
+                            R.string.verify_verdict_incomplete_offline_body
+                        } else {
+                            verdict.bodyRes()
+                        },
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.ink,
                 )
@@ -218,7 +265,7 @@ private fun MerkleRootLine(root: String) {
 }
 
 @Composable
-private fun ChecksSection(groups: List<CheckGroup>) {
+private fun ChecksSection(groups: List<CheckGroup>, revealedGroups: Int) {
     val colors = RealityLockThemeTokens.colors
     val total = groups.sumOf { it.total }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -238,8 +285,13 @@ private fun ChecksSection(groups: List<CheckGroup>) {
                 color = colors.inkMuted,
             )
         }
-        for (group in groups) {
-            GroupCard(group)
+        groups.forEachIndexed { index, group ->
+            AnimatedVisibility(
+                visible = index < revealedGroups,
+                enter = fadeIn() + expandVertically(),
+            ) {
+                GroupCard(group)
+            }
         }
     }
 }
@@ -545,3 +597,6 @@ private fun VerificationReport.Verdict.bodyRes(): Int = when (this) {
     VerificationReport.Verdict.INVALID_FORMAT -> R.string.verify_verdict_invalid_format_body
     VerificationReport.Verdict.UNKNOWN -> R.string.verify_verdict_unknown_body
 }
+
+/** Gap between reveal steps. ~0.9 s for the usual 5 links + 4 groups. */
+private const val REVEAL_STEP_MILLIS = 100L

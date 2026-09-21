@@ -1,14 +1,17 @@
 package com.realitylock.app.verify
 
 import com.realitylock.app.core.config.SyncConfig
+import java.io.IOException
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONObject
-import java.io.IOException
 
 /**
  * Asks the backend to verify a proof package and returns the per-check breakdown.
@@ -67,6 +70,23 @@ class VerificationClient(
         } catch (e: IOException) {
             Result.Unreachable(e.message ?: e.javaClass.simpleName)
         }
+    }
+
+    /**
+     * Fire-and-forget `GET /health`, to start a sleeping backend booting.
+     *
+     * The deployment sleeps after 15 minutes idle and takes ~20–60 s to wake.
+     * Called when the app is opened, it spends the time someone takes to frame a
+     * shot absorbing that boot, so the first real sync meets a warm server. It
+     * sends nothing about the user or their captures, and its result is ignored:
+     * a failure here means only that the later sync will do the waiting instead.
+     */
+    fun wake() {
+        val url = base.newBuilder().addPathSegments(SyncConfig.HEALTH_PATH).build()
+        client.newCall(Request.Builder().url(url).get().build()).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) = Unit
+            override fun onResponse(call: Call, response: Response) = response.close()
+        })
     }
 
     /** The verification URL a QR badge encodes, for `GET /verify/<eventId>`. */

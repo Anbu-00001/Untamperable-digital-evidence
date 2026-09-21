@@ -14,6 +14,7 @@ import com.realitylock.app.core.config.EvidenceBundleConfig
 import com.realitylock.app.core.di.AppContainer
 import com.realitylock.app.core.time.ClockCorrelator
 import com.realitylock.app.sync.SyncState
+import com.realitylock.app.verify.OfflineProofVerifier
 import com.realitylock.app.verify.VerificationClient
 import com.realitylock.app.verify.VerificationReport
 import kotlinx.coroutines.CoroutineDispatcher
@@ -57,6 +58,12 @@ data class ProofsUiState(
     val report: VerificationReport? = null,
     /** Event the displayed [report] belongs to. */
     val reportEventId: String? = null,
+    /**
+     * True when [report] came from [OfflineProofVerifier] on this phone rather
+     * than from the backend. The panel must say so: the two answer different
+     * questions, and an offline report can never reach `verified`.
+     */
+    val reportIsOffline: Boolean = false,
     val verifyError: String? = null,
     val buildingCertificateFor: String? = null,
     val pendingCertificate: PendingCertificate? = null,
@@ -134,7 +141,13 @@ class ProofsViewModel(
     fun verify(eventId: String) {
         if (_uiState.value.verifyingEventId != null) return
         _uiState.update {
-            it.copy(verifyingEventId = eventId, report = null, reportEventId = null, verifyError = null)
+            it.copy(
+                verifyingEventId = eventId,
+                report = null,
+                reportEventId = null,
+                reportIsOffline = false,
+                verifyError = null,
+            )
         }
 
         viewModelScope.launch {
@@ -161,8 +174,57 @@ class ProofsViewModel(
         }
     }
 
-    fun dismissReport() =
-        _uiState.update { it.copy(report = null, reportEventId = null, verifyError = null) }
+    /**
+     * Verifies an event entirely on this phone, with no network.
+     *
+     * Runs [OfflineProofVerifier] over the exact stored package bytes and the
+     * device's own copy of the media. It recomputes every hash, the Merkle root,
+     * the signature and the attestation chain's internal links — but it cannot
+     * anchor that chain to Google's roots, check revocation, or see the
+     * server-held RFC 3161 token, so its strongest honest result is `incomplete`.
+     * The report carries that in its own limitations, and the panel labels it.
+     */
+    fun verifyOffline(eventId: String) {
+        if (_uiState.value.verifyingEventId != null) return
+        _uiState.update {
+            it.copy(
+                verifyingEventId = eventId,
+                report = null,
+                reportEventId = null,
+                reportIsOffline = false,
+                verifyError = null,
+            )
+        }
+
+        viewModelScope.launch {
+            val report = withContext(ioDispatcher) {
+                val bytes = repository.readPackageBytes(eventId) ?: return@withContext null
+                // A missing media file is not an error here: the verifier reports
+                // `mediaHashMatch` as unavailable, which is the true answer.
+                val media = repository.findById(eventId)
+                    ?.let { File(it.mediaFilePath) }
+                    ?.takeIf { it.isFile }
+                    ?.let { OfflineProofVerifier.MediaSource.of(it) }
+                OfflineProofVerifier.verify(String(bytes, Charsets.UTF_8), media)
+            }
+            _uiState.update {
+                if (report == null) {
+                    it.copy(verifyingEventId = null, verifyError = ERROR_PACKAGE_UNREADABLE)
+                } else {
+                    it.copy(
+                        verifyingEventId = null,
+                        report = report,
+                        reportEventId = eventId,
+                        reportIsOffline = true,
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissReport() = _uiState.update {
+        it.copy(report = null, reportEventId = null, reportIsOffline = false, verifyError = null)
+    }
 
     /**
      * Renders the PDF and holds it until the UI's save dialog returns a
@@ -196,8 +258,14 @@ class ProofsViewModel(
                         // verdict too — it previously covered only the check rows,
                         // while the label came pre-resolved from the composable and
                         // could belong to another event entirely.
-                        report = _uiState.value.report
-                            ?.takeIf { _uiState.value.reportEventId == eventId },
+                        // ...and only a SERVER report. An offline report answers a
+                        // smaller question (no root anchoring, no revocation, no
+                        // RFC 3161), and the certificate's QR points at the server's
+                        // verdict — printing the phone's own check beside it would
+                        // let one be read as the other.
+                        report = _uiState.value.report?.takeIf {
+                            _uiState.value.reportEventId == eventId && !_uiState.value.reportIsOffline
+                        },
                         title = title,
                         verdictLabeller = verdictLabeller,
                         notVerifiedLabel = notVerifiedLabel,

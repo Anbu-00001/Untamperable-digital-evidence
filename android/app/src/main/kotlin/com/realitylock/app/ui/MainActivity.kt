@@ -37,6 +37,8 @@ class MainActivity : ComponentActivity() {
         // of a platform default that could change again.
         enableEdgeToEdge()
         val container = (application as RealityLockApplication).container
+        // Only on a fresh launch, not on rotation: one wake-up per opening is enough.
+        if (savedInstanceState == null) container.verificationClient.wake()
 
         setContent {
             // RealityLockTheme, not a bare MaterialTheme. It installs MaterialTheme

@@ -4,39 +4,39 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.annotation.StringRes
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.windowInsetsPadding
-import com.realitylock.app.ui.common.chromeInsets
-import com.realitylock.app.ui.common.scrollableBottomInset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,11 +47,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -65,15 +72,18 @@ import com.realitylock.app.core.config.CertificateConfig
 import com.realitylock.app.core.config.EvidenceBundleConfig
 import com.realitylock.app.sync.SyncStage
 import com.realitylock.app.sync.SyncState
-import com.realitylock.app.ui.backup.BackupViewModel
 import com.realitylock.app.ui.analyze.AnalyzeScreen
 import com.realitylock.app.ui.analyze.AnalyzeViewModel
+import com.realitylock.app.ui.backup.BackupViewModel
+import com.realitylock.app.ui.common.chromeInsets
+import com.realitylock.app.ui.common.scrollableBottomInset
 import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
-import com.realitylock.app.ui.evidence.EvidenceViewerScreen
 import com.realitylock.app.ui.evidence.EvidenceThumbnail
+import com.realitylock.app.ui.evidence.EvidenceViewerScreen
 import com.realitylock.app.ui.verify.AuthenticityResultPanel
 import com.realitylock.app.ui.verify.ProofsViewModel
 import com.realitylock.app.verify.VerificationReport
+import kotlinx.coroutines.launch
 
 /**
  * Capture screen: live preview, a shutter that records a tamper-evident event,
@@ -226,12 +236,36 @@ private fun CaptureTab(
             runCatching { viewModel.cameraController.bind(lifecycleOwner, previewView) }
         }
 
-        AndroidView(
-            factory = { previewView },
+        // Shutter flash over the preview, fired on press. Purely a signal that the
+        // button registered — it asserts nothing about the capture's outcome.
+        val flash = remember { Animatable(0f) }
+        val scope = rememberCoroutineScope()
+        val haptics = LocalHapticFeedback.current
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(PREVIEW_ASPECT_RATIO),
-        )
+        ) {
+            AndroidView(factory = { previewView }, modifier = Modifier.matchParentSize())
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = flash.value }
+                    .background(Color.White),
+            )
+        }
+
+        // The confirming buzz waits for the RECORD, not the press: it fires only
+        // when a new signed event actually exists, so the phone never "confirms" a
+        // capture that then failed to hash, sign or persist.
+        val recordedId = uiState.lastEvent?.eventId
+        var confirmedId by rememberSaveable { mutableStateOf(recordedId) }
+        LaunchedEffect(recordedId) {
+            if (recordedId != null && recordedId != confirmedId) {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                confirmedId = recordedId
+            }
+        }
 
         // Bystander notice, directly beneath the live preview.
         //
@@ -265,7 +299,13 @@ private fun CaptureTab(
         }
 
         Button(
-            onClick = { viewModel.capture(includeLocation = hasLocationPermission) },
+            onClick = {
+                scope.launch {
+                    flash.snapTo(SHUTTER_FLASH_ALPHA)
+                    flash.animateTo(0f, tween(SHUTTER_FLASH_MILLIS))
+                }
+                viewModel.capture(includeLocation = hasLocationPermission)
+            },
             enabled = !uiState.isCapturing,
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -574,6 +614,7 @@ private fun HistoryTab(
                     isVerifying = proofsState.verifyingEventId == event.eventId,
                     isBuildingCertificate = proofsState.buildingCertificateFor == event.eventId,
                     onVerify = { proofsViewModel.verify(event.eventId) },
+                    onVerifyOffline = { proofsViewModel.verifyOffline(event.eventId) },
                     onRetrySync = { proofsViewModel.retrySync(event.eventId) },
                     onExportCertificate = {
                         proofsViewModel.buildCertificate(
@@ -613,6 +654,7 @@ private fun HistoryTab(
                         AuthenticityResultPanel(
                             report = report,
                             onClose = proofsViewModel::dismissReport,
+                            checkedOnDevice = proofsState.reportIsOffline,
                         )
                     }
                 }
@@ -671,6 +713,7 @@ private fun EventCard(
     isVerifying: Boolean = false,
     isBuildingCertificate: Boolean = false,
     onVerify: (() -> Unit)? = null,
+    onVerifyOffline: (() -> Unit)? = null,
     onRetrySync: (() -> Unit)? = null,
     onExportCertificate: (() -> Unit)? = null,
     onExportAnnexure: (() -> Unit)? = null,
@@ -782,11 +825,28 @@ private fun EventCard(
                 )
                 // The reason is shown, not swallowed: a stalled sync with no
                 // explanation is indistinguishable from a broken app.
+                //
+                // A RETRYABLE failure (stage not FAILED — permanent ones go straight
+                // to FAILED) is explained first, because its raw text alone
+                // ("timeout") reads as breakage when it is usually a server still
+                // waking from idle. The raw reason stays visible beneath it.
                 state.lastError?.let { error ->
+                    val retrying = state.stage != SyncStage.FAILED
+                    if (retrying) {
+                        Text(
+                            stringResource(R.string.sync_retrying_explained),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
                         error,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = if (retrying) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
                     )
                 }
             }
@@ -835,6 +895,13 @@ private fun EventCard(
                         )
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        onVerifyOffline?.let { action ->
+                            DropdownMenuItem(
+                                enabled = !isVerifying,
+                                text = { Text(stringResource(R.string.verify_offline_action)) },
+                                onClick = { menuOpen = false; action() },
+                            )
+                        }
                         onExportCertificate?.let { action ->
                             DropdownMenuItem(
                                 enabled = !isBuildingCertificate,
@@ -943,6 +1010,10 @@ private fun Context.isGranted(permission: String): Boolean =
     ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
 private const val PREVIEW_ASPECT_RATIO = 3f / 4f
+
+/** Peak opacity and fade of the shutter flash — a cue that the press registered. */
+private const val SHUTTER_FLASH_ALPHA = 0.85f
+private const val SHUTTER_FLASH_MILLIS = 220
 private const val EVENT_ID_PREVIEW_LENGTH = 8
 private const val MILLIS_PER_SECOND = 1_000L
 private const val HASH_PREVIEW_LENGTH = 16

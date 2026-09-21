@@ -20,8 +20,10 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -146,6 +148,45 @@ class ProofsViewModelTest {
     }
 
     // --- verification flow ---
+
+    // --- on-device verification ---
+
+    @Test
+    fun `verifying on the phone yields a report marked offline and never calls the network`() = runTest {
+        val vm = viewModel()
+
+        vm.verifyOffline(EVENT_A)
+
+        val state = vm.uiState.value
+        assertNotNull(state.report)
+        assertEquals(EVENT_A, state.reportEventId)
+        assertTrue("an on-device report must be labelled as such", state.reportIsOffline)
+        mockkVerify(exactly = 0) { verificationClient.verify(any()) }
+    }
+
+    @Test
+    fun `a certificate never prints an on-device report as the verdict`() = runTest {
+        // The certificate's QR points at the SERVER's verdict. An offline report
+        // answers a smaller question and must not be stamped beside it.
+        val vm = viewModel()
+        vm.verifyOffline(EVENT_A)
+
+        vm.exportCertificate(EVENT_A)
+
+        assertEquals(NOT_VERIFIED, renderedContent.captured.verdictLabel)
+    }
+
+    @Test
+    fun `a server verify after an offline one clears the offline label`() = runTest {
+        val vm = viewModel()
+        every { verificationClient.verify(any()) } returns
+            VerificationClient.Result.Ok(report(VerificationReport.Verdict.VERIFIED))
+
+        vm.verifyOffline(EVENT_A)
+        vm.verify(EVENT_A)
+
+        assertFalse(vm.uiState.value.reportIsOffline)
+    }
 
     @Test
     fun `a second verify is ignored while one is already in flight`() = runTest {

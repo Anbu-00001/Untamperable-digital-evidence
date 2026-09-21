@@ -22,6 +22,9 @@ object SyncConfig {
     /** POST a package here for a per-check verification breakdown. */
     const val VERIFY_PATH: String = "verify"
 
+    /** Liveness probe; also what wakes a sleeping free-tier backend. */
+    const val HEALTH_PATH: String = "health"
+
     const val CONTENT_TYPE_JSON: String = "application/json"
 
     /**

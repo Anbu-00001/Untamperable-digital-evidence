@@ -161,8 +161,26 @@ Full record: [`docs/design/PHASE7_STRETCH_STATUS.md`](docs/design/PHASE7_STRETCH
 - **Refused or declined with reasons:** OpenTimestamps (unfixable CVEs), face blur,
   Wi-Fi/cell cross-check. **Not built:** PRNU, C2PA export, Polygon anchoring.
 
-Test inventory (2026-09-21): **178 backend tests** (all passing), **324 JVM** and
-**34 instrumented** `@Test` methods on Android.
+Test inventory (2026-09-21): **178 backend tests** and **336 Android JVM tests**, all
+passing, plus **34 instrumented** `@Test` methods.
+
+## Live demo toolkit
+- **`scripts/demo/demo_prep.sh [--resync-missing]`** — run before any demo with the
+  phone on USB. It checks the backend URL the *installed* APK actually uses (read out
+  of the APK itself), wakes the server, checks permissions and the battery exemption,
+  and finds captures the server lost in a redeploy. `--resync-missing` re-queues them
+  so the app uploads the original signed bytes again — nothing is re-signed.
+- **`scripts/demo/tamper.sh [eventId] | --restore`** — edits one digit of a synced
+  capture's stored record on the phone, so the next Verify shows the Record link fail
+  in the proof-chain diagram; `--restore` puts the original bytes back and confirms
+  them by SHA-256. It refuses to touch anything not yet synced, because the server
+  store is append-only.
+- **The certificate's QR code opens a readable page.** `GET /verify/:eventId` returns
+  HTML to a browser and unchanged JSON to everything else. The page is labelled as
+  the web verifier, needs no JavaScript, and never shows the photo or the location.
+- **Verify on this phone (no network)** in a capture's ⋮ menu runs the on-device
+  verifier. It is labelled as such, and it can never say VERIFIED (see
+  `OfflineProofVerifier`).
 
 ## Quick start
 ```bash

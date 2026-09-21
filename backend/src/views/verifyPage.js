@@ -118,6 +118,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;background
 .mono{font-family:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:13px;word-break:break-all}
 dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;margin:12px 0 0;text-align:left}
 dt{color:var(--muted);font-size:13px}dd{margin:0;min-width:0}
+@media (max-width:480px){dl{grid-template-columns:minmax(0,1fr);gap:0}dt{margin-top:8px}}
 h2{font-size:15px;margin:0 0 4px}
 .sub{color:var(--muted);font-size:13px;margin:0 0 8px}
 details{border-top:1px solid var(--line);padding:10px 0}
@@ -162,6 +163,14 @@ function groupCard(title, summary, rows) {
     '</section>';
 }
 
+/**
+ * `2026-08-15T06:49:53.119Z` → `2026-08-15 06:49:53.119 UTC`. Same instant, same
+ * precision — only the separators change, so nothing is rounded or re-zoned.
+ */
+function readableTime(iso) {
+  return typeof iso === 'string' ? iso.replace('T', ' ').replace(/Z$/, ' UTC') : iso;
+}
+
 /** Renders `backtick` spans (check names in the limitation text) as code. Input is already escaped. */
 function codeSpans(escaped) {
   return escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -203,11 +212,11 @@ function renderVerifyPage(body) {
   const anchor = body.timestampAnchor;
   const facts = [
     ['Event', `<span class="mono">${esc(body.eventId)}</span>`],
-    ['Captured (device clock)', esc(body.capturedAt)],
+    ['Captured (device clock)', esc(readableTime(body.capturedAt))],
     ['Merkle root', `<span class="mono">${esc(body.merkleRoot)}</span>`],
   ];
   if (anchor) {
-    facts.push(['Independent timestamp', `${esc(anchor.genTime)}<br><span class="note">${esc(anchor.authority)}</span>`]);
+    facts.push(['Independent timestamp', `${esc(readableTime(anchor.genTime))}<br><span class="note">${esc(anchor.authority)}</span>`]);
   }
 
   const inner =

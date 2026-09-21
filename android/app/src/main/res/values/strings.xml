@@ -52,7 +52,7 @@
     <string name="event_hash_pending">not signed</string>
     <string name="event_hash_truncated">%1$s…</string>
     <string name="event_label_signature">Signature</string>
-    <string name="event_signature_attested">hardware-attested</string>
+    <string name="event_signature_attested">attestation chain recorded</string>
     <string name="event_signature_unattested">signed, not attested</string>
 
     <!-- ==================== Device status / diagnostics ==================== -->
@@ -117,7 +117,7 @@
     <string name="verify_running">Verifying…</string>
     <string name="verify_title">Authenticity result</string>
     <string name="verify_verdict_verified">VERIFIED</string>
-    <string name="verify_verdict_failed">TAMPERED</string>
+    <string name="verify_verdict_failed">FAILED</string>
     <string name="verify_verdict_incomplete">INCOMPLETE</string>
     <string name="verify_verdict_invalid_format">NOT A VALID PROOF PACKAGE</string>
     <string name="verify_verdict_unknown">UNKNOWN</string>
@@ -144,6 +144,12 @@
     <string name="verify_outcome_unavailable">not checkable</string>
     <string name="verify_outcome_unknown">unrecognised</string>
     <string name="verify_close">Close</string>
+    <string name="sync_retrying_explained">Could not reach the verification server yet — it retries automatically. A server that has been idle can take up to a minute to wake. The capture is safe on this phone meanwhile.</string>
+    <!-- On-device verification (OfflineProofVerifier). Its ceiling is INCOMPLETE,
+         and the panel says so up front rather than leaving it to the limitations. -->
+    <string name="verify_offline_action">Verify on this phone (no network)</string>
+    <string name="verify_verdict_incomplete_offline_body">Nothing this phone could check failed. The checks it cannot run without a network — Google root and revocation — keep it from saying VERIFIED; that is by design, not a fault.</string>
+    <string name="verify_offline_badge">Checked on this phone, with no network. It cannot anchor the attestation to Google\'s roots, check revocation, or see the independent timestamp — so INCOMPLETE is the strongest result it can give. Use Verify for the full check.</string>
 
     <!-- Check labels, so the screen reads as English rather than as JSON keys. -->
     <string name="check_schemaValid">Schema valid</string>
