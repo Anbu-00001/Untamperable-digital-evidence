@@ -123,6 +123,19 @@ class CheckGroupsTest {
     }
 
     @Test
+    fun `every check in the display order has a label and an explanation`() {
+        // A known check with no sentence would render as bare jargon — the RFC 3161
+        // checks did exactly that until they were added here.
+        for (name in VerificationReport.DISPLAY_ORDER) {
+            assertNotNull("no explanation for $name", checkDetail(name))
+        }
+        for (name in listOf("timestampAnchorValid", "captureTimeNotAfterAnchor")) {
+            assertNotNull("no label for $name", fallbackCheckLabel(name))
+            assertEquals(CheckGroupId.CONTEXT, groupIdFor(name))
+        }
+    }
+
+    @Test
     fun `every check in the display order survives grouping`() {
         val all = VerificationReport.DISPLAY_ORDER.map { Check(it, Outcome.PASS) }
         val groups = groupChecks(all)

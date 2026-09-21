@@ -349,4 +349,31 @@
     <string name="analyze_classifier_no_face">No face found, so this model was not run. It was trained only on faces and has no meaning for other subjects.</string>
     <string name="analyze_classifier_unavailable">Could not run: %1$s</string>
     <string name="analyze_classifier_caveat">Meso-4 (Afchar et al., 2018), using the authors\' published weights. Its accuracy has NOT been measured on this project\'s data, so this number is not evidence of anything on its own. It does not affect any proof, certificate or verification result.</string>
+
+    <!-- Durable backup (Device tab). Every failure line names something the user
+         can act on; see BackupSection.describe(). -->
+    <string name="backup_title">Durable backup</string>
+    <string name="backup_intro">A second, verified copy of every capture in a folder you choose. The app\'s own copy is deleted if Reality Lock is uninstalled or its data cleared — this one is not.</string>
+    <string name="backup_choose_folder">Choose backup folder</string>
+    <string name="backup_grant_refused">Android refused a durable hold on that folder. Pick a different one — a folder the app cannot keep access to would stop backing up without telling you.</string>
+    <string name="backup_folder_label">Folder</string>
+    <string name="backup_folder_unnamed">(chosen folder)</string>
+    <string name="backup_change">Change</string>
+    <string name="backup_no_captures">No captures yet.</string>
+    <plurals name="backup_progress">
+        <item quantity="one">%1$d of %2$d capture backed up.</item>
+        <item quantity="other">%1$d of %2$d captures backed up.</item>
+    </plurals>
+    <string name="backup_failed_count">%1$d could not be written after repeated attempts. The originals are untouched inside the app.</string>
+    <string name="backup_running">Backing up…</string>
+    <string name="backup_run_now">Back up now</string>
+    <string name="backup_forget">Forget</string>
+    <string name="backup_failure_no_destination">No folder chosen yet.</string>
+    <string name="backup_failure_permission_lost">Reality Lock no longer has permission to write to that folder. Choose it again to restore access.</string>
+    <string name="backup_failure_unreachable">That folder can\'t be reached — it may have been deleted, or it may be on a memory card that isn\'t in the phone.</string>
+    <string name="backup_failure_out_of_space">The storage holding that folder is full.</string>
+    <string name="backup_failure_bundle_unavailable">Some captures could not be packaged for backup.</string>
+    <string name="backup_failure_write_failed">Writing to that folder failed.</string>
+    <string name="backup_failure_verification_failed">A copy was written but did not read back intact, so it was removed rather than left there looking like a backup.</string>
+    <string name="backup_failure_name_conflict">That folder renamed the file, so the copy could not be recorded reliably. An empty folder used only for Reality Lock avoids this.</string>
 </resources>

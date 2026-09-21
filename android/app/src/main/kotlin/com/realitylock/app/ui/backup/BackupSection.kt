@@ -2,6 +2,7 @@ package com.realitylock.app.ui.backup
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,9 +22,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.realitylock.app.R
 import com.realitylock.app.backup.BackupFailure
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
 
@@ -81,28 +85,24 @@ fun BackupSection(viewModel: BackupViewModel, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            "Durable backup",
+            stringResource(R.string.backup_title),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = colors.ink,
         )
         Text(
-            "A second, verified copy of every capture in a folder you choose. " +
-                "The app's own copy is deleted if Reality Lock is uninstalled or its " +
-                "data cleared — this one is not.",
+            stringResource(R.string.backup_intro),
             style = MaterialTheme.typography.bodySmall,
             color = colors.inkMuted,
         )
 
         if (!state.hasDestination) {
             Button(onClick = { picker.launch(null) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Choose backup folder")
+                Text(stringResource(R.string.backup_choose_folder))
             }
             if (state.grantRefused) {
                 StatusLine(
-                    text = "Android refused a durable hold on that folder. Pick a " +
-                        "different one — a folder the app cannot keep access to " +
-                        "would stop backing up without telling you.",
+                    text = stringResource(R.string.backup_grant_refused),
                     color = colors.fail,
                 )
             }
@@ -116,35 +116,39 @@ fun BackupSection(viewModel: BackupViewModel, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Folder", style = MaterialTheme.typography.labelSmall, color = colors.inkMuted)
+                Text(stringResource(R.string.backup_folder_label), style = MaterialTheme.typography.labelSmall, color = colors.inkMuted)
                 Text(
-                    state.destinationName ?: "(chosen folder)",
+                    state.destinationName ?: stringResource(R.string.backup_folder_unnamed),
                     style = MaterialTheme.typography.bodyMedium,
                     fontFamily = FontFamily.Monospace,
                     color = colors.ink,
                 )
             }
-            TextButton(onClick = { picker.launch(null) }) { Text("Change") }
+            TextButton(onClick = { picker.launch(null) }) { Text(stringResource(R.string.backup_change)) }
         }
 
         // ---- the count -------------------------------------------------------
         val blocked = state.blockedBy
         if (blocked != null) {
-            StatusLine(text = describe(blocked), color = colors.fail)
+            StatusLine(text = stringResource(describe(blocked)), color = colors.fail)
         } else {
             val allDone = state.totalEvents > 0 && state.backedUp == state.totalEvents
             StatusLine(
                 text =
-                    if (state.totalEvents == 0) "No captures yet."
-                    else "${state.backedUp} of ${state.totalEvents} captures backed up.",
+                    if (state.totalEvents == 0) stringResource(R.string.backup_no_captures)
+                    else pluralStringResource(
+                        R.plurals.backup_progress,
+                        state.totalEvents,
+                        state.backedUp,
+                        state.totalEvents,
+                    ),
                 color = if (allDone) colors.pass else colors.warn,
             )
         }
 
         if (state.failed > 0) {
             StatusLine(
-                text = "${state.failed} could not be written after repeated attempts. " +
-                    "The originals are untouched inside the app.",
+                text = stringResource(R.string.backup_failed_count, state.failed),
                 color = colors.fail,
             )
         }
@@ -155,9 +159,13 @@ fun BackupSection(viewModel: BackupViewModel, modifier: Modifier = Modifier) {
                 enabled = !state.running,
                 modifier = Modifier.weight(1f),
             ) {
-                Text(if (state.running) "Backing up…" else "Back up now")
+                Text(
+                    stringResource(
+                        if (state.running) R.string.backup_running else R.string.backup_run_now,
+                    ),
+                )
             }
-            OutlinedButton(onClick = viewModel::forgetDestination) { Text("Forget") }
+            OutlinedButton(onClick = viewModel::forgetDestination) { Text(stringResource(R.string.backup_forget)) }
         }
     }
 }
@@ -171,25 +179,14 @@ private fun StatusLine(text: String, color: androidx.compose.ui.graphics.Color) 
  * Each of these names something the user can act on. A failure they cannot act on
  * is worse than silence, because it teaches them the warning is noise.
  */
-private fun describe(failure: BackupFailure): String = when (failure) {
-    BackupFailure.NO_DESTINATION ->
-        "No folder chosen yet."
-    BackupFailure.DESTINATION_PERMISSION_LOST ->
-        "Reality Lock no longer has permission to write to that folder. " +
-            "Choose it again to restore access."
-    BackupFailure.DESTINATION_UNREACHABLE ->
-        "That folder can't be reached — it may have been deleted, or it may be on " +
-            "a memory card that isn't in the phone."
-    BackupFailure.OUT_OF_SPACE ->
-        "The storage holding that folder is full."
-    BackupFailure.BUNDLE_UNAVAILABLE ->
-        "Some captures could not be packaged for backup."
-    BackupFailure.WRITE_FAILED ->
-        "Writing to that folder failed."
-    BackupFailure.VERIFICATION_FAILED ->
-        "A copy was written but did not read back intact, so it was removed rather " +
-            "than left there looking like a backup."
-    BackupFailure.NAME_CONFLICT ->
-        "That folder renamed the file, so the copy could not be recorded reliably. " +
-            "An empty folder used only for Reality Lock avoids this."
+@StringRes
+private fun describe(failure: BackupFailure): Int = when (failure) {
+    BackupFailure.NO_DESTINATION -> R.string.backup_failure_no_destination
+    BackupFailure.DESTINATION_PERMISSION_LOST -> R.string.backup_failure_permission_lost
+    BackupFailure.DESTINATION_UNREACHABLE -> R.string.backup_failure_unreachable
+    BackupFailure.OUT_OF_SPACE -> R.string.backup_failure_out_of_space
+    BackupFailure.BUNDLE_UNAVAILABLE -> R.string.backup_failure_bundle_unavailable
+    BackupFailure.WRITE_FAILED -> R.string.backup_failure_write_failed
+    BackupFailure.VERIFICATION_FAILED -> R.string.backup_failure_verification_failed
+    BackupFailure.NAME_CONFLICT -> R.string.backup_failure_name_conflict
 }

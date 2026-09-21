@@ -71,9 +71,13 @@ services:
       # authority being down is not evidence about a capture.
       - key: TIMESTAMP_ANCHOR_ENABLED
         value: "true"
-      # DigiCert: no account, no published rate limit, and its responder chains
-      # to DigiCert Trusted Root G4 which Node already bundles — so no
-      # certificate ships with this service and none can go stale.
+      # An ordered fallback list (comma-separated), tried until one returns a
+      # token that verifies. DigiCert first: no account, no published rate limit,
+      # and its responder chains to DigiCert Trusted Root G4 which Node already
+      # bundles — so no certificate ships with this service and none can go
+      # stale. GlobalSign and SSL.com were live-verified against this service's
+      # own verifier on 2026-09-21 and chain to bundled roots the same way; they
+      # exist so one TSA's outage does not leave every new capture unanchored.
       #
       # Do NOT substitute freetsa.org here without also solving trust. It is the
       # most-recommended free TSA and it does NOT chain to any public root (probed
@@ -81,7 +85,7 @@ services:
       # pinning a self-signed CA. Same for timestamp.acs.microsoft.com.
       # `node backend/scripts/ops/probe_tsa.js` re-checks any candidate.
       - key: TIMESTAMP_ANCHOR_TSA_URL
-        value: "http://timestamp.digicert.com"
+        value: "http://timestamp.digicert.com,http://timestamp.globalsign.com/tsa/r6advanced1,http://ts.ssl.com"
       # NOTE — not set here, and worth understanding before relying on the limit
       # above: without REDIS_URL the limiter counts per process. A probe on
       # 2026-08-06 found this deployment answering from THREE independent

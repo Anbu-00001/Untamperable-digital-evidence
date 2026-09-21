@@ -143,14 +143,29 @@ function buildRequest(rootHex) {
 }
 
 /**
- * Requests a timestamp token over `rootHex` from a TSA.
+ * Requests a timestamp token over `rootHex`, trying each configured TSA in order.
  *
  * Throws on any failure. Callers on the ingest path treat that as "no anchor",
  * never as "the package is bad" — a TSA outage is not evidence about a capture.
  */
 async function requestTimestamp(rootHex, options = {}) {
-  const tsaUrl = options.tsaUrl || config.timestampAnchor.tsaUrl;
+  const tsaUrls = options.tsaUrl ? [options.tsaUrl] : config.timestampAnchor.tsaUrls;
   const timeoutMs = options.timeoutMs || config.timestampAnchor.timeoutMs;
+  const failures = [];
+  // In order, stopping at the first VERIFIED token. An unverifiable token from
+  // one TSA is a failure like any other: it is never stored, and the next TSA
+  // gets a fresh request with a fresh nonce.
+  for (const tsaUrl of tsaUrls) {
+    try {
+      return await requestFromTsa(rootHex, tsaUrl, timeoutMs);
+    } catch (err) {
+      failures.push(err.message);
+    }
+  }
+  throw new Error(`no TSA produced a verifiable token: ${failures.join(' | ')}`);
+}
+
+async function requestFromTsa(rootHex, tsaUrl, timeoutMs) {
   const { der, nonce } = buildRequest(rootHex);
 
   const response = await fetch(tsaUrl, {

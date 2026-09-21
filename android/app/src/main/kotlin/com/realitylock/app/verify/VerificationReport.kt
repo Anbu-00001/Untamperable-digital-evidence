@@ -56,6 +56,8 @@ data class VerificationReport(
             "attestationNotRevoked",
             "attestationSecurityLevel",
             "timestampPlausible",
+            "timestampAnchorValid",
+            "captureTimeNotAfterAnchor",
             "locationPlausible",
         )
 

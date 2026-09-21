@@ -50,6 +50,25 @@ fun cfgOrNull(key: String): String? =
         ?: localProperties.getProperty(key)
         ?: (project.findProperty(key) as String?)
 
+// The backend URL baked into this build, resolved once so it can be checked.
+//
+// A loopback host is correct only with `adb reverse` running (run_sync_e2e.sh
+// passes it via -P for exactly that). Coming from local.properties it is a trap:
+// a plain `assembleDebug` then ships an APK whose every sync call goes to the
+// phone's own loopback and fails with no error naming the cause — which is how
+// this was found, the night before a presentation, by grepping the APK's dex.
+val backendBaseUrl = cfg("REALITYLOCK_BACKEND_BASE_URL", "http://10.0.2.2:3000/")
+if (
+    "REALITYLOCK_BACKEND_BASE_URL" !in gradle.startParameter.projectProperties &&
+    Regex("""^https?://(127\.\d+\.\d+\.\d+|localhost)([:/]|$)""").containsMatchIn(backendBaseUrl)
+) {
+    logger.warn(
+        "w: REALITYLOCK_BACKEND_BASE_URL resolves to $backendBaseUrl (not passed via -P). " +
+            "A physical phone reaches that only through `adb reverse`; for a standalone " +
+            "install pass -PREALITYLOCK_BACKEND_BASE_URL=<deployed URL>.",
+    )
+}
+
 // Package identity, declared once. `namespace` (R-class package) and
 // `applicationId` (Play Store identity) are the same value today but remain
 // separately assignable, since they are allowed to diverge later.
@@ -102,7 +121,7 @@ android {
         buildConfigField(
             "String",
             "BACKEND_BASE_URL",
-            "\"${cfg("REALITYLOCK_BACKEND_BASE_URL", "http://10.0.2.2:3000/")}\""
+            "\"$backendBaseUrl\""
         )
         buildConfigField(
             "long",

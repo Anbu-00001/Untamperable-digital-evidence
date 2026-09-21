@@ -8,8 +8,8 @@
 ## Repository layout
 | Path | What it is |
 |---|---|
-| [`android/`](android/) | Android app (Kotlin, MVVM, Compose). Capture pipeline complete and verified on hardware; cryptographic core lands in Phase 3. |
-| [`backend/`](backend/) | Node.js + Express verification/storage service. Schema-validating `/proof` and `/verify` work today; crypto verification lands in Phase 5. |
+| [`android/`](android/) | Android app (Kotlin, MVVM, Compose): capture, hardware-backed signing, offline sync, on-device verification, forensic Analyze tab, evidence export and backup. Verified on a physical device. |
+| [`backend/`](backend/) | Node.js + Express verification/storage service: full cryptographic `/verify`, Google-rooted attestation with revocation, RFC 3161 time anchoring, rate limiting, proof-of-possession reads. |
 | [`docs/design/`](docs/design/) | The **Proof Package** schema + spec, example instance, and Architecture Decision Records. |
 | [`docs/evidence/`](docs/evidence/) | Real proof sidecars pulled off a physical device, so the status claims below can be **checked, not trusted**. |
 | [`research/`](research/) | The full research corpus (competitive landscape, crypto architecture, tech stack, legal, literature) + the phased plan. **Start with [`research/README.md`](research/README.md).** |
@@ -133,11 +133,36 @@ Evidence — including the ELA heat-map lighting up a known splice — in [docs/
 which drives a real capture in **airplane mode** against a real backend over
 `adb reverse`. **141 unit tests + 6 instrumented + 68 backend.**
 
-**Not built (stated, not hidden):** no authentication or rate limiting on the
-backend — anyone who can reach it can submit or verify. Acceptable for coursework,
-and Phase-6 hardening work.
+**Not built at the time (stated, not hidden):** no authentication or rate
+limiting on the backend. Both were closed in Phase 6 — see below.
 
-**Next:** Phase 6 — testing, security validation, deployment.
+### Phase 6 (Testing, security validation, deployment) — complete; two accuracy items in progress
+Full record: [`docs/design/PHASE6_SECURITY_VALIDATION.md`](docs/design/PHASE6_SECURITY_VALIDATION.md).
+- Each security scenario (media tamper, metadata tamper, mock location, gallery
+  import, weak/absent attestation) was run and its result recorded, including the
+  one that had to be rewritten because Play Integrity is not used (ADR-0004).
+- Per-IP rate limiting with a verified `trust proxy` hop count, R8 minification,
+  and **proof-of-possession on reads** ([ADR-0007](docs/design/adr/ADR-0007-backend-read-authorisation.md)):
+  only the key that signed a package can fetch its GPS or photo back.
+- Deployed at `https://civicmesh.onrender.com/` (Render free tier — ~20–60 s cold
+  start after 15 min idle; the store is wiped by every redeploy).
+- **In progress:** GPS accuracy and ELA false-positive characterisation — the
+  physical data is being collected. No accuracy figure is claimed until then.
+
+### Phase 7 (Stretch) and Phase 8 (Attestation hardening) — partial, by design
+Full record: [`docs/design/PHASE7_STRETCH_STATUS.md`](docs/design/PHASE7_STRETCH_STATUS.md).
+- **Built:** BSA 2023 s.63 annexure (PDF), bystander capture notice, RFC 3161 time
+  anchoring with an ordered fallback of three TSAs ([ADR-0009](docs/design/adr/ADR-0009-independent-time-anchor.md)),
+  evidence-bundle export, durable SAF backup, and an **experimental** Meso-4
+  deepfake classifier behind a face gate with no accuracy claim ([ADR-0010](docs/design/adr/ADR-0010-experimental-deepfake-classifier.md)).
+- **Attestation:** the chain is anchored to Google's **pinned** roots (re-checked
+  byte-for-byte against the live list on 2026-09-21), checked against Google's
+  revocation list, and its extension parsed for the security level.
+- **Refused or declined with reasons:** OpenTimestamps (unfixable CVEs), face blur,
+  Wi-Fi/cell cross-check. **Not built:** PRNU, C2PA export, Polygon anchoring.
+
+Test inventory (2026-09-21): **178 backend tests** (all passing), **324 JVM** and
+**34 instrumented** `@Test` methods on Android.
 
 ## Quick start
 ```bash

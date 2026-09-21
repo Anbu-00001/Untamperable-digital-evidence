@@ -280,15 +280,17 @@ function collectAdvisories(pkg, checks, advisories, historyReadFailed = false) {
  * would verify. The roots are therefore pinned in `data/`, with their provenance
  * and update procedure in the file header.
  *
- * ## What is STILL not established
+ * ## What was added after root anchoring
  *
- * - **Revocation.** Google publishes a status list at
- *   `https://android.googleapis.com/attestation/status`, keyed by certificate
- *   serial. It is not consulted, so a key revoked for compromise still verifies
- *   here. This is the next gap, and it is not claimed to be solved.
- * - **The attestation extension itself** (OID 1.3.6.1.4.1.11129.2.1.17) is not
- *   parsed, so `securityLevel` (TrustedEnvironment vs StrongBox) and
- *   `verifiedBootState` are not checked against expectations.
+ * Both gaps this comment used to list as open are now closed, and each is its
+ * own check rather than a silent upgrade of this one:
+ *
+ * - **Revocation** — `attestationNotRevoked`, below, consults Google's status
+ *   list (`./attestationRevocation`). It reports `unavailable`, never `pass`,
+ *   when no fresh snapshot exists, because that check fails open by nature.
+ * - **The attestation extension** (OID 1.3.6.1.4.1.11129.2.1.17) — parsed by
+ *   `./attestationExtension` into `attestationSecurityLevel`; `verifiedBootState`
+ *   is reported in the notes but deliberately does not gate the verdict.
  */
 /**
  * Is any certificate in [chain] on Google's revocation list?

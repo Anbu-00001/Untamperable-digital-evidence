@@ -35,6 +35,14 @@ object IntegrityConfig {
     const val MIN_DISTANCE_METERS_FOR_SPEED: Double = 50.0
 
     /**
+     * How far ahead of the verifier's own clock a capture may claim to be before
+     * it is implausible. MUST equal the backend's `plausibility.maxFutureSkewMillis`
+     * default: an NTP-synced device lands within seconds, and this allows for an
+     * unsynchronised clock without admitting a forged future date.
+     */
+    const val MAX_FUTURE_SKEW_MILLIS: Long = 5L * 60L * 1000L
+
+    /**
      * Named checks that actually run, recorded in `integrity.location.mockDetectionChecks`.
      *
      * Every name declared here must be reachable from [CaptureCoordinator]. A

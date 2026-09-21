@@ -180,3 +180,19 @@ test('a present-but-invalid anchor fails rather than reading as absent', () => {
   assert.equal(checks.captureTimeNotAfterAnchor, 'unavailable');
   assert.ok(notes.some((n) => n.includes('did not verify')), notes.join(' | '));
 });
+
+test('requestTimestamp falls through to the next TSA when one fails', async (t) => {
+  const config = require('../src/config');
+  const saved = config.timestampAnchor.tsaUrls;
+  // Two unreachable endpoints (port 1 on loopback refuses). The
+  // aggregate error must name every attempt — an operator needs to see that the
+  // FALLBACK ran, not only that the first TSA failed.
+  config.timestampAnchor.tsaUrls = ['http://127.0.0.1:1/a', 'http://127.0.0.1:1/b'];
+  t.after(() => { config.timestampAnchor.tsaUrls = saved; });
+  const { requestTimestamp } = require('../src/services/timestampAnchor');
+  await assert.rejects(
+    requestTimestamp('00'.repeat(32), { timeoutMs: 500 }),
+    (err) => /no TSA produced a verifiable token/.test(err.message)
+      && err.message.split(' | ').length === 2,
+  );
+});

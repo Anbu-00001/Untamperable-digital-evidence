@@ -27,7 +27,7 @@ external accounts or assets**. Each carries its reason below.
 | PRNU offline demo | Not built | Research-grade; needs a camera-specific corpus the project must not fabricate |
 | C2PA manifest export | Not built | Real value, large surface; the honest next candidate |
 | Polygon Amoy contract | **Blocked** | Needs a funded testnet wallet — an account, not code |
-| TFLite MesoNet classifier | **Unblocked, needs one Colab run** | `research/mesonet_to_tflite.ipynb` builds it from the authors' published weights |
+| TFLite MesoNet classifier | **Built, experimental** (2026-08-13) | Analyze tab only, behind a face gate, no accuracy claim — see ADR-0010 |
 
 ### The 2026-08-06 re-assessment
 
@@ -296,7 +296,11 @@ that ADR-0009 provides that property with no account, no funding and no
 per-anchor cost, a chain anchor adds decentralised custody of the timestamp
 rather than a new claim. Real, but a smaller increment than it looked before.
 
-## TFLite MesoNet — unblocked, needs one Colab run
+## TFLite MesoNet — built as an experiment (superseded by ADR-0010)
+
+> **Update 2026-08-13:** the Colab run happened and the model ships as
+> `android/app/src/main/assets/meso4_df.tflite`. How it may be shown without
+> overclaiming is decided in ADR-0010; the text below is the pre-build record.
 
 `research/mesonet_to_tflite.ipynb` converts Meso-4 to TFLite from the authors'
 own published `Meso4_DF.h5` weights, so nothing is fabricated. It asserts the

@@ -2,6 +2,7 @@ package com.realitylock.app.verify
 
 import com.realitylock.app.capture.LocationPlausibility
 import com.realitylock.app.core.config.CryptoConfig
+import com.realitylock.app.core.config.IntegrityConfig
 import com.realitylock.app.core.time.ClockCorrelator
 import com.realitylock.app.crypto.Hashing
 import com.realitylock.app.crypto.MerkleTree
@@ -198,6 +199,15 @@ object OfflineProofVerifier {
 
         // --- timestamp plausibility ------------------------------------------
         checks[TIMESTAMP_PLAUSIBLE] = checkTimestampPlausible(metadata, nowMillis, notes)
+
+        // --- independent time anchor (RFC 3161, ADR-0009) --------------------
+        // The TSA token is minted and stored by the backend at ingest; it is not
+        // part of the signed package, so there is nothing here to check. Reported
+        // `unavailable` rather than omitted, so an offline report never looks as
+        // though the anchor was examined and found absent.
+        checks += SERVER_HELD_CHECKS.associateWith { Outcome.UNAVAILABLE }
+        notes += "the independent RFC 3161 timestamp is held by the verification service, " +
+            "not inside the package, so it was not checked offline"
 
         // --- location plausibility -------------------------------------------
         val previousMetadata = previousPackageJson
@@ -492,9 +502,9 @@ object OfflineProofVerifier {
         }
 
         val futureBy = wallClockMillis - nowMillis
-        if (futureBy > MAX_FUTURE_SKEW_MILLIS) {
+        if (futureBy > IntegrityConfig.MAX_FUTURE_SKEW_MILLIS) {
             notes += "capture claims to be $futureBy ms in the future, beyond the " +
-                "$MAX_FUTURE_SKEW_MILLIS ms skew allowance"
+                "${IntegrityConfig.MAX_FUTURE_SKEW_MILLIS} ms skew allowance"
             return Outcome.FAIL
         }
 
@@ -751,6 +761,16 @@ object OfflineProofVerifier {
     const val ATTESTATION_SECURITY_LEVEL: String = "attestationSecurityLevel"
     const val TIMESTAMP_PLAUSIBLE: String = "timestampPlausible"
     const val LOCATION_PLAUSIBLE: String = "locationPlausible"
+    const val TIMESTAMP_ANCHOR_VALID: String = "timestampAnchorValid"
+    const val CAPTURE_TIME_NOT_AFTER_ANCHOR: String = "captureTimeNotAfterAnchor"
+
+    /**
+     * Checks over evidence that only the verification service holds — the RFC
+     * 3161 token it obtained at ingest. Always [Outcome.UNAVAILABLE] here, and,
+     * as on the backend, advisory rather than decisive.
+     */
+    val SERVER_HELD_CHECKS: List<String> =
+        listOf(TIMESTAMP_ANCHOR_VALID, CAPTURE_TIME_NOT_AFTER_ANCHOR)
 
     /**
      * The checks that **cannot** be answered without a network or without data
@@ -815,14 +835,6 @@ object OfflineProofVerifier {
         "Does NOT prove the depicted event was real, unstaged, or correctly described.",
         "Not a standalone legal certificate; BSA 2023 s.63 requires human certification.",
     )
-
-    /**
-     * How far ahead of the verifier's own clock a capture may claim to be.
-     * Mirrors the backend's `plausibility.maxFutureSkewMillis` default: an
-     * NTP-synced device lands within seconds, and this allows for an
-     * unsynchronised clock without admitting a forged future date.
-     */
-    private const val MAX_FUTURE_SKEW_MILLIS = 5L * 60L * 1000L
 
     /** A chain needs at least a leaf and an issuer to establish anything. */
     private const val MIN_CHAIN_LENGTH = 2

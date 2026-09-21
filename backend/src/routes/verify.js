@@ -7,6 +7,7 @@ const { verifyProofPackage } = require('../services/proofVerifier');
 const { verifyTimestampToken } = require('../services/timestampAnchor');
 const { getSharedStore, isSafeEventId } = require('../store');
 const { hasLocation } = require('../store/support');
+const { renderVerifyPage, renderVerifyError } = require('../views/verifyPage');
 
 const router = express.Router();
 
@@ -204,14 +205,30 @@ router.get('/:eventId/timestamp', (req, res) => {
  */
 router.get('/:eventId', async (req, res) => {
   const { eventId } = req.params;
+  // One URL, two representations. The QR code on the certificate encodes this
+  // route, so a browser that scans it gets a readable page, while the app, the
+  // e2e scripts and curl keep the exact JSON they always had. JSON is listed
+  // FIRST: `req.accepts` returns the first entry for `*/*` (curl, Node fetch)
+  // and for a missing Accept header (OkHttp), so only a client that explicitly
+  // prefers text/html — a browser — ever gets HTML. `?format=json` forces JSON.
+  const html = req.query.format !== 'json' && req.accepts(['json', 'html']) === 'html';
+  // Both representations live at one URL, so any cache must key on Accept, and
+  // a verdict is recomputed per request, so nothing should be cached at all.
+  res.vary('Accept');
+  res.setHeader('Cache-Control', 'no-store');
+  const send = (status, body) => (html
+    ? res.status(status).type('html').send(
+      status === 200 ? renderVerifyPage(body) : renderVerifyError(body.error, body.eventId))
+    : res.status(status).json(body));
+
   if (!isSafeEventId(eventId)) {
-    return res.status(400).json({ error: 'invalid_event_id' });
+    return send(400, { error: 'invalid_event_id' });
   }
 
   const store = getSharedStore();
   const pkg = store.getPackage(eventId);
   if (!pkg) {
-    return res.status(404).json({ error: 'not_found', eventId });
+    return send(404, { error: 'not_found', eventId });
   }
 
   // Validated here too. The store is not a trusted input: these are plain JSON
@@ -225,7 +242,7 @@ router.get('/:eventId', async (req, res) => {
     anchorVerification,
   });
 
-  return res.status(200).json({
+  return send(200, {
     eventId,
     // Safe to echo: it is a digest, and it is what a holder of the original
     // media can compare against without us disclosing anything else.

@@ -175,9 +175,20 @@ const config = {
     // responder chains to DigiCert Trusted Root G4, which is in Node's bundled
     // Mozilla set, so no certificate has to be shipped with this service.
     //
-    // Overridable because a TSA is a single point of failure that this project
-    // does not control, and swapping one should be an env change, not a deploy.
-    tsaUrl: process.env.TIMESTAMP_ANCHOR_TSA_URL || 'http://timestamp.digicert.com',
+    // An ORDERED list, tried until one answers with a token that verifies. A
+    // single TSA was a single point of failure this project does not control.
+    // Every default below was live-tested on 2026-09-21 against this service's
+    // own verifyTimestampToken — each chains to a root in Node's bundled Mozilla
+    // set, so a fallback never needs a certificate shipped with the service.
+    // Do NOT add freetsa.org without solving trust: it chains to no public root
+    // (see render.yaml). `node scripts/ops/probe_tsa.js <url>` checks a candidate.
+    //
+    // TIMESTAMP_ANCHOR_TSA_URL takes one URL or a comma-separated list.
+    tsaUrls: envList('TIMESTAMP_ANCHOR_TSA_URL', [
+      'http://timestamp.digicert.com',
+      'http://timestamp.globalsign.com/tsa/r6advanced1',
+      'http://ts.ssl.com',
+    ]),
 
     // Measured round-trips were 650 ms – 1.4 s. Five seconds is generous enough
     // to absorb a slow day and short enough that a hung TSA cannot hold an
@@ -238,8 +249,12 @@ const config = {
 
       // Off by default in tests so no suite reaches the network. Any other
       // environment that disables it gets `unavailable`, never a silent pass.
-      enabled: (process.env.ATTESTATION_REVOCATION_ENABLED ??
-        String(process.env.NODE_ENV !== 'test')) === 'true',
+      //
+      // Parsed with envFlag like every other security switch. It previously
+      // compared against the literal 'true', so `=1`, `=yes` or `=TRUE` all
+      // quietly switched revocation checking OFF — the exact fail-open typo
+      // envFlag exists to refuse.
+      enabled: envFlag('ATTESTATION_REVOCATION_ENABLED', process.env.NODE_ENV !== 'test'),
     },
   },
 

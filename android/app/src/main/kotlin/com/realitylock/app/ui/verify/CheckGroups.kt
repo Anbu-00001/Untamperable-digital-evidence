@@ -135,6 +135,8 @@ private val GROUP_BY_CHECK: Map<String, CheckGroupId> = mapOf(
     "attestationNotRevoked" to CheckGroupId.ATTESTATION,
     "attestationSecurityLevel" to CheckGroupId.ATTESTATION,
     "timestampPlausible" to CheckGroupId.CONTEXT,
+    "timestampAnchorValid" to CheckGroupId.CONTEXT,
+    "captureTimeNotAfterAnchor" to CheckGroupId.CONTEXT,
     "locationPlausible" to CheckGroupId.CONTEXT,
 )
 
@@ -197,6 +199,14 @@ private val CHECK_DETAIL: Map<String, String> = mapOf(
         "The key was generated inside the TEE or StrongBox rather than in software.",
     "timestampPlausible" to
         "The recorded capture time agrees with the device's clock evidence.",
+    // The two RFC 3161 checks (ADR-0009). Worded to what a TSA token proves: that
+    // the root EXISTED by the TSA's time — an upper bound, never a capture time.
+    "timestampAnchorValid" to
+        "An independent timestamp authority signed this package's Merkle root, so it " +
+            "existed no later than the authority's recorded time.",
+    "captureTimeNotAfterAnchor" to
+        "The device's claimed capture time is not later than the independent timestamp, " +
+            "allowing for ordinary clock drift.",
     "locationPlausible" to
         "The recorded location is self-consistent and did not come from a mock provider.",
 )
@@ -208,14 +218,16 @@ fun checkDetail(name: String): String? = CHECK_DETAIL[name]
  * Labels for checks that have no `R.string.check_*` resource yet.
  *
  * `strings.xml` is owned elsewhere, and the attestation work landed three checks
- * ahead of it. Falling through to the raw camelCase key would still be *visible*,
+ * ahead of it, and the RFC 3161 work two more. Falling through to the raw camelCase key would still be *visible*,
  * which is the hard requirement, but it would read as debug output; these give the
- * same three checks a sentence-case label until resources catch up.
+ * same checks a sentence-case label until resources catch up.
  */
 private val FALLBACK_CHECK_LABEL: Map<String, String> = mapOf(
     "attestationRootTrusted" to "Attestation root trusted",
     "attestationNotRevoked" to "Attestation not revoked",
     "attestationSecurityLevel" to "Attested in secure hardware",
+    "timestampAnchorValid" to "Independent timestamp valid",
+    "captureTimeNotAfterAnchor" to "Capture time before timestamp",
 )
 
 /** A label for a check with no resource, or null to fall back to [humaniseCheckName]. */

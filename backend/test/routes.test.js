@@ -324,3 +324,46 @@ test('an oversized media upload is rejected rather than buffered', async () => {
     assert.strictEqual(res.status, 413);
   });
 });
+
+// --- GET /verify/:id — human-readable page for a scanned QR ---------------
+
+test('GET /verify/:id serves HTML to a browser and JSON to everything else', async () => {
+  await withServer(async (base) => {
+    const { pkg, media } = buildSignedPackage({ location: locationAt(...COORDS.chennai) });
+    await postJson(base, '/proof', pkg);
+    await postBytes(base, `/proof/${pkg.eventId}/media`, media);
+    const url = `${base}/verify/${pkg.eventId}`;
+    const browserAccept = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+
+    const page = await fetch(url, { headers: { Accept: browserAccept } });
+    const html = await page.text();
+    assert.strictEqual(page.status, 200);
+    assert.match(page.headers.get('content-type'), /text\/html/);
+    assert.match(page.headers.get('vary'), /Accept/);
+    assert.match(html, /Web verifier/);
+    assert.match(html, /Verified|Incomplete|Failed/);
+    // Same privacy rule as the JSON: the page must not carry the coordinates.
+    for (const coord of COORDS.chennai) {
+      assert.ok(!html.includes(String(coord)), `coordinate ${coord} leaked into the page`);
+    }
+    assert.ok(!/<script/i.test(html), 'the page must need no script');
+
+    // Default fetch Accept is */* — must stay JSON, byte-compatible with before.
+    const api = await fetch(url);
+    assert.match(api.headers.get('content-type'), /application\/json/);
+    assert.strictEqual((await api.json()).eventId, pkg.eventId);
+
+    const forced = await fetch(`${url}?format=json`, { headers: { Accept: browserAccept } });
+    assert.match(forced.headers.get('content-type'), /application\/json/);
+  });
+});
+
+test('GET /verify/:id escapes and renders errors as pages for a browser', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(`${base}/verify/99999999-9999-4999-8999-999999999999`, {
+      headers: { Accept: 'text/html' },
+    });
+    assert.strictEqual(res.status, 404);
+    assert.match(await res.text(), /No such event on this server/);
+  });
+});

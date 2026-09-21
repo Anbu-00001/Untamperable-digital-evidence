@@ -37,7 +37,13 @@ object SyncConfig {
     // Deliberately generous: this work is deferrable background sync on a mobile
     // connection, not a user-facing request, so waiting is cheaper than a retry.
     const val CONNECT_TIMEOUT_SECONDS: Long = 15
-    const val READ_TIMEOUT_SECONDS: Long = 30
+    //
+    // Read is sized to the deployed backend's cold start, not to a warm round
+    // trip. Render's free tier sleeps after 15 min idle; waking took 22.6 s when
+    // measured (2026-08-13 and again 2026-09-21) and is reported up to ~60 s. At
+    // 30 s the FIRST sync after any idle gap raced the boot and usually lost —
+    // surfacing a raw "timeout" in red, then succeeding on the retry 30 s later.
+    const val READ_TIMEOUT_SECONDS: Long = 75
     const val WRITE_TIMEOUT_SECONDS: Long = 60
 
     // ---- WorkManager -------------------------------------------------------
