@@ -2,13 +2,17 @@ package com.realitylock.app.ui.diagnostics
 
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,10 +20,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.realitylock.app.R
 import com.realitylock.app.capture.GnssCapabilityProbe
@@ -32,6 +40,9 @@ import com.realitylock.app.crypto.SigningKeyManager
 import com.realitylock.app.ui.backup.BackupSection
 import com.realitylock.app.ui.backup.BackupViewModel
 import com.realitylock.app.ui.common.scrollableBottomInset
+import com.realitylock.app.ui.components.GlassCard
+import com.realitylock.app.ui.components.IconBadge
+import com.realitylock.app.ui.components.RlIcons
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -123,17 +134,29 @@ private fun DeviceStatusContent(modifier: Modifier, backupViewModel: BackupViewM
             .padding(bottom = scrollableBottomInset()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            LEGEND,
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.inkMuted,
-        )
+        // The device at a glance: one tile per capability, icon + colour + glyph.
+        CapabilityGrid(capabilities, attestation)
 
-        // Placed first, above the read-only diagnostics below it, because it is
-        // the only thing on this screen the user can act on — and the only one
-        // where doing nothing loses evidence.
+        // Placed first among the controls, above the read-only diagnostics, because
+        // it is the only thing on this screen the user can act on — and the only
+        // one where doing nothing loses evidence.
         backupViewModel?.let { BackupSection(viewModel = it) }
+
+        // The full rows, for anyone who wants them, behind one tap.
+        var detailsOpen by rememberSaveable { mutableStateOf(false) }
+        GlassCard(Modifier.fillMaxWidth(), onClick = { detailsOpen = !detailsOpen }) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                IconBadge(RlIcons.Record, colors.info, size = 34.dp)
+                Text(
+                    stringResource(R.string.device_details),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.ink,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(if (detailsOpen) RlIcons.Collapse else RlIcons.Expand, null, tint = colors.inkMuted)
+            }
+        }
+        if (!detailsOpen) return@Column
 
         DeviceSection(
             title = stringResource(R.string.device_section_build),
@@ -222,6 +245,67 @@ private fun DeviceStatusContent(modifier: Modifier, backupViewModel: BackupViewM
     }
 }
 
+@Composable
+private fun CapabilityGrid(capabilities: DeviceCapabilities, attestation: AttestationProbe.Result?) {
+    val c = RealityLockThemeTokens.colors
+    val tier = attestation?.tier
+    val secure = when (tier) {
+        null -> DeviceCheckStatus.UNAVAILABLE
+        SigningKeyManager.SecurityTier.STRONGBOX, SigningKeyManager.SecurityTier.TRUSTED_ENVIRONMENT ->
+            if (attestation.attested) DeviceCheckStatus.PASS else DeviceCheckStatus.FAIL
+        SigningKeyManager.SecurityTier.UNKNOWN -> DeviceCheckStatus.UNKNOWN
+    }
+    val tiles = listOf(
+        Triple(RlIcons.Capture, stringResource(R.string.device_camera), required(capabilities.hasCamera)),
+        Triple(RlIcons.GpsFix, stringResource(R.string.device_gps), required(capabilities.hasGps)),
+        Triple(RlIcons.Motion, stringResource(R.string.device_tile_motion), required(capabilities.hasAccelerometer)),
+        Triple(RlIcons.Gyro, stringResource(R.string.device_gyroscope), required(capabilities.hasGyroscope)),
+        Triple(RlIcons.StrongBox, stringResource(R.string.device_tile_strongbox), optional(capabilities.hasStrongBox)),
+        Triple(
+            RlIcons.ShieldGood,
+            when (tier) {
+                SigningKeyManager.SecurityTier.STRONGBOX -> "StrongBox"
+                SigningKeyManager.SecurityTier.TRUSTED_ENVIRONMENT -> "TEE"
+                else -> stringResource(R.string.device_secure_key)
+            },
+            secure,
+        ),
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        tiles.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { (icon, label, status) ->
+                    val (tint, glyph) = when (status) {
+                        DeviceCheckStatus.PASS -> c.pass to "✓"
+                        DeviceCheckStatus.FAIL -> c.fail to "✕"
+                        DeviceCheckStatus.UNAVAILABLE -> c.unavailable to "—"
+                        DeviceCheckStatus.UNKNOWN -> c.unknown to "?"
+                    }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(tint.copy(alpha = 0.12f))
+                            .border(1.dp, tint.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
+                            .padding(vertical = 14.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        IconBadge(icon, tint, size = 44.dp)
+                        Text(
+                            "$glyph $label",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = c.ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 /**
  * Rows for the attestation card, including the pre-result state.
  *
@@ -292,10 +376,6 @@ private const val ATTESTATION_EXPORT_FILE = "attestation-chain.json"
 // collide. Everything with an existing resource is still read from resources.
 // Move these into strings.xml for localisation once the file is free.
 // ---------------------------------------------------------------------------
-private const val LEGEND =
-    "Checks report an outcome — pass, fail, unavailable or unknown. " +
-        "Facts are recorded values shown in monospace; they are not verdicts."
-
 private const val LABEL_SCHEMA_URN = "Proof package schema"
 
 private const val NOTE_STRONGBOX_ABSENT =

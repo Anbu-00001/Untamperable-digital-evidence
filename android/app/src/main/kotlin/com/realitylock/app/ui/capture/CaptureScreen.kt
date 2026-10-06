@@ -1,5 +1,9 @@
 package com.realitylock.app.ui.capture
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -7,25 +11,35 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,6 +54,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,6 +67,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -75,14 +91,31 @@ import com.realitylock.app.sync.SyncState
 import com.realitylock.app.ui.analyze.AnalyzeScreen
 import com.realitylock.app.ui.analyze.AnalyzeViewModel
 import com.realitylock.app.ui.backup.BackupViewModel
+import com.realitylock.app.ui.common.LocalBottomInsetHandled
 import com.realitylock.app.ui.common.chromeInsets
 import com.realitylock.app.ui.common.scrollableBottomInset
+import com.realitylock.app.ui.components.AppHeader
+import com.realitylock.app.ui.components.BrandMark
+import com.realitylock.app.ui.components.ChipFlow
+import com.realitylock.app.ui.components.CyberNavBar
+import com.realitylock.app.ui.components.GradientButton
+import com.realitylock.app.ui.components.InfoChip
+import com.realitylock.app.ui.components.NavDestination
+import com.realitylock.app.ui.components.NoticeChip
+import com.realitylock.app.ui.components.RlIcons
+import com.realitylock.app.ui.components.brandBrush
+import com.realitylock.app.ui.components.rememberIsOnline
+import com.realitylock.app.ui.components.rememberPulse
 import com.realitylock.app.ui.diagnostics.DeviceStatusScreen
 import com.realitylock.app.ui.evidence.EvidenceThumbnail
 import com.realitylock.app.ui.evidence.EvidenceViewerScreen
+import com.realitylock.app.ui.theme.RealityLockThemeTokens
 import com.realitylock.app.ui.verify.AuthenticityResultPanel
+import com.realitylock.app.ui.verify.ProofExplorerScreen
 import com.realitylock.app.ui.verify.ProofsViewModel
 import com.realitylock.app.verify.VerificationReport
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -140,62 +173,72 @@ fun CaptureScreen(
             // see only the bottom inset remaining and cannot double-count.
             .windowInsetsPadding(chromeInsets),
     ) {
-        Text(
-            stringResource(R.string.app_name),
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(16.dp),
-        )
+        // Header: logo + two live facts (network, queued captures).
+        val online by rememberIsOnline()
+        val shellProofs by proofsViewModel.uiState.collectAsState()
+        val queued = uiState.events.count {
+            shellProofs.syncStates[it.eventId]?.stage != SyncStage.COMPLETE
+        }
+        AppHeader(online = online, queued = queued)
 
-        TabRow(selectedTabIndex = selectedTab) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = { TabLabel(stringResource(R.string.tab_capture)) },
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = { TabLabel(stringResource(R.string.tab_history)) },
-            )
-            Tab(
-                selected = selectedTab == 2,
-                onClick = { selectedTab = 2 },
-                text = { TabLabel(stringResource(R.string.tab_analyze)) },
-            )
-            Tab(
-                selected = selectedTab == 3,
-                onClick = { selectedTab = 3 },
-                text = { TabLabel(stringResource(R.string.tab_device)) },
-            )
+        // Sync runs in the background, and its progress lives on disk. While anything
+        // is still waiting, re-read it every couple of seconds so the counters, the
+        // chips and the trust rings catch up by themselves instead of waiting for
+        // the user to switch tabs.
+        LaunchedEffect(queued > 0) {
+            while (queued > 0) {
+                delay(SYNC_POLL_MILLIS)
+                proofsViewModel.refreshSyncStates()
+            }
         }
 
-        when (selectedTab) {
-            0 -> CaptureTab(
-                viewModel = viewModel,
-                uiState = uiState,
-                hasCameraPermission = hasCameraPermission,
-                hasLocationPermission = hasLocationPermission,
-                lifecycleOwner = lifecycleOwner,
-                onRequestPermissions = {
-                    permissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.CAMERA,
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                        ),
+        // Tab content. The bar below owns the bottom system inset, so lists in
+        // here are told not to pad for it a second time.
+        Box(modifier = Modifier.weight(1f)) {
+            CompositionLocalProvider(LocalBottomInsetHandled provides true) {
+                when (selectedTab) {
+                    0 -> CaptureTab(
+                        viewModel = viewModel,
+                        uiState = uiState,
+                        hasCameraPermission = hasCameraPermission,
+                        hasLocationPermission = hasLocationPermission,
+                        lifecycleOwner = lifecycleOwner,
+                        onRequestPermissions = {
+                            permissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.CAMERA,
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                ),
+                            )
+                        },
                     )
-                },
-            )
 
-            1 -> HistoryTab(
-                events = uiState.events,
-                onDelete = viewModel::deleteEvent,
-                proofsViewModel = proofsViewModel,
-            )
+                    1 -> HistoryTab(
+                        events = uiState.events,
+                        onDelete = viewModel::deleteEvent,
+                        proofsViewModel = proofsViewModel,
+                    )
 
-            2 -> AnalyzeScreen(viewModel = analyzeViewModel)
+                    2 -> AnalyzeScreen(viewModel = analyzeViewModel)
 
-            else -> DeviceStatusScreen(backupViewModel = backupViewModel)
+                    else -> DeviceStatusScreen(backupViewModel = backupViewModel)
+                }
+            }
         }
+
+        CyberNavBar(
+            destinations = listOf(
+                NavDestination(RlIcons.Capture, stringResource(R.string.tab_capture)),
+                NavDestination(RlIcons.History, stringResource(R.string.tab_history)),
+                NavDestination(RlIcons.Analyze, stringResource(R.string.tab_analyze)),
+                NavDestination(RlIcons.Device, stringResource(R.string.tab_device)),
+            ),
+            selected = selectedTab,
+            onSelect = { selectedTab = it },
+            modifier = Modifier.windowInsetsPadding(
+                WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom),
+            ),
+        )
     }
 }
 
@@ -209,19 +252,18 @@ private fun CaptureTab(
     onRequestPermissions: () -> Unit,
 ) {
     val context = LocalContext.current
+    val c = RealityLockThemeTokens.colors
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             // Applied AFTER verticalScroll, which is what makes it padding on the
-            // scrolled CONTENT rather than on the viewport. The distinction is
-            // the whole fix: padding the viewport would carve out a dead strip
-            // above the navigation bar, while padding the content lets the last
-            // item scroll up until it clears the bar and then stop.
-            .padding(16.dp)
-            .padding(bottom = scrollableBottomInset()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            // scrolled CONTENT rather than on the viewport (see WindowInsetsSupport).
+            // Zero under the floating nav bar, which pads for the inset itself.
+            .padding(horizontal = 16.dp)
+            .padding(bottom = scrollableBottomInset() + 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         if (!hasCameraPermission) {
             PermissionRequestPanel(
@@ -236,15 +278,48 @@ private fun CaptureTab(
             runCatching { viewModel.cameraController.bind(lifecycleOwner, previewView) }
         }
 
+        // Live instruments for the viewfinder HUD. They run only while this tab is
+        // composed, and nothing they read is ever saved or signed.
+        val radar = rememberRadarState(locationGranted = hasLocationPermission)
+
         // Shutter flash over the preview, fired on press. Purely a signal that the
         // button registered — it asserts nothing about the capture's outcome.
         val flash = remember { Animatable(0f) }
         val scope = rememberCoroutineScope()
         val haptics = LocalHapticFeedback.current
+
+        // The seal overlay shows while a capture is really running, then lingers
+        // briefly once it has finished so the per-stage timings can be read.
+        var showSeal by remember { mutableStateOf(false) }
+        LaunchedEffect(uiState.isCapturing, uiState.sealTotalMillis) {
+            when {
+                uiState.isCapturing -> showSeal = true
+                uiState.sealTotalMillis != null && showSeal -> {
+                    delay(SEAL_LINGER_MILLIS)
+                    showSeal = false
+                }
+                else -> showSeal = false
+            }
+        }
+
+        // Tap the radar or the satellite count to read what they mean; it closes
+        // itself after a few seconds so it never sits over a shot.
+        var showSkyLegend by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(showSkyLegend) {
+            if (showSkyLegend) {
+                delay(SKY_LEGEND_MILLIS)
+                showSkyLegend = false
+            }
+        }
+        val skyLegendLabel = stringResource(R.string.sky_legend_action)
+
+        val viewfinderShape = RoundedCornerShape(26.dp)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(PREVIEW_ASPECT_RATIO),
+                .aspectRatio(PREVIEW_ASPECT_RATIO)
+                .clip(viewfinderShape)
+                .border(BorderStroke(1.5.dp, brandBrush()), viewfinderShape),
         ) {
             AndroidView(factory = { previewView }, modifier = Modifier.matchParentSize())
             Box(
@@ -253,6 +328,86 @@ private fun CaptureTab(
                     .graphicsLayer { alpha = flash.value }
                     .background(Color.White),
             )
+            ViewfinderBrackets(color = c.primary.copy(alpha = 0.85f))
+
+            // ---- HUD: live readouts, top row ---------------------------------
+            val pulse by rememberPulse(900)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 22.dp, top = 22.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // A pulsing dot and the word LIVE: this is an instrument, not a record.
+                HudChip(RlIcons.Bolt, stringResource(R.string.hud_live), c.fail.copy(alpha = 0.6f + 0.4f * pulse))
+                val accuracy = radar.accuracyMeters
+                HudChip(
+                    icon = if (hasLocationPermission) RlIcons.GpsFix else RlIcons.GpsOff,
+                    text = when {
+                        !hasLocationPermission -> stringResource(R.string.hud_gps_off)
+                        accuracy == null -> stringResource(R.string.hud_gps_searching)
+                        else -> "±${accuracy.roundToInt()} m"
+                    },
+                    tint = when {
+                        !hasLocationPermission -> c.unavailable
+                        accuracy == null -> c.warn
+                        accuracy <= GOOD_ACCURACY_METERS -> c.pass
+                        else -> c.warn
+                    },
+                )
+            }
+            if (hasLocationPermission) {
+                HudChip(
+                    icon = RlIcons.Satellite,
+                    text = "${radar.usedCount}/${radar.satellites.size}",
+                    tint = if (radar.usedCount > 0) c.pass else c.inkMuted,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 22.dp, top = 22.dp)
+                        .semantics { contentDescription = skyLegendLabel },
+                    onClick = { showSkyLegend = !showSkyLegend },
+                )
+            }
+
+            // ---- HUD: sky plot + tilt bubble, bottom corners -----------------
+            SkyRadar(
+                state = radar,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 22.dp, bottom = 22.dp)
+                    .clip(CircleShape)
+                    .clickable { showSkyLegend = !showSkyLegend }
+                    .semantics { contentDescription = skyLegendLabel },
+            )
+            if (radar.hasMotion) {
+                HudChip(
+                    icon = RlIcons.Steady,
+                    text = stringResource(if (radar.steady) R.string.hud_steady else R.string.hud_moving),
+                    tint = if (radar.steady) c.primary else c.warn,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 22.dp, bottom = 22.dp),
+                )
+            }
+
+            // Fully qualified: inside this Box an implicit ColumnScope from the
+            // enclosing Column also matches, and Kotlin refuses the ambiguity.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showSkyLegend && !showSeal,
+                modifier = Modifier.align(Alignment.Center),
+                enter = fadeIn(tween(160)),
+                exit = fadeOut(tween(200)),
+            ) {
+                SkyLegend(state = radar, onDismiss = { showSkyLegend = false })
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showSeal,
+                enter = fadeIn(tween(160)),
+                exit = fadeOut(tween(420)),
+            ) {
+                SealOverlay(stages = uiState.stages, totalMillis = uiState.sealTotalMillis)
+            }
         }
 
         // The confirming buzz waits for the RECORD, not the press: it fires only
@@ -267,75 +422,82 @@ private fun CaptureTab(
             }
         }
 
-        // Bystander notice, directly beneath the live preview.
-        //
-        // research/06 §3.2 recommends "a separate, additional notice/consent
-        // affordance aimed at bystanders captured incidentally in frame — e.g. a
-        // visible on-screen indicator during capture". Under the DPDP Act 2023 a
-        // bystander whose face and location are recorded is plausibly a Data
-        // Principal in their own right, and they are the one party to a capture
-        // who never agreed to anything and cannot see a consent screen.
-        //
-        // Placed under the preview rather than over it on purpose: an overlay
-        // would sit on the framing the user is composing, and a notice that gets
-        // in the way is a notice people learn to switch off. It is always shown
-        // — there is no dismiss — because it is addressed to someone other than
-        // the person holding the phone.
-        Text(
-            stringResource(R.string.capture_bystander_notice),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        // ---- Shutter row: last capture, the shutter, and the live notice ------
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            ShutterButton(
+                busy = uiState.isCapturing,
+                enabled = true,
+                contentDescription = stringResource(R.string.capture_action),
+                onClick = {
+                    scope.launch {
+                        flash.snapTo(SHUTTER_FLASH_ALPHA)
+                        flash.animateTo(0f, tween(SHUTTER_FLASH_MILLIS))
+                    }
+                    viewModel.capture(includeLocation = hasLocationPermission)
+                },
+            )
+            uiState.lastEvent?.let { last ->
+                EvidenceThumbnail(
+                    event = last,
+                    size = 56.dp,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                )
+            }
+        }
+
+        // The legal notice, shortened to an icon and a few words; the full
+        // sentence — including that the HUD is a live readout, not evidence — is
+        // one tap away.
+        NoticeChip(
+            icon = RlIcons.Privacy,
+            short = stringResource(R.string.capture_notice_short),
+            full = stringResource(R.string.capture_notice_full),
+            tint = c.info,
         )
 
         if (!hasLocationPermission) {
-            Text(
-                stringResource(R.string.capture_location_denied_warning),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+            NoticeChip(
+                icon = RlIcons.GpsOff,
+                short = stringResource(R.string.capture_location_denied_short),
+                full = stringResource(R.string.capture_location_denied_warning),
+                tint = c.warn,
             )
             TextButton(onClick = onRequestPermissions) {
                 Text(stringResource(R.string.capture_grant_location))
             }
         }
 
-        Button(
-            onClick = {
-                scope.launch {
-                    flash.snapTo(SHUTTER_FLASH_ALPHA)
-                    flash.animateTo(0f, tween(SHUTTER_FLASH_MILLIS))
-                }
-                viewModel.capture(includeLocation = hasLocationPermission)
-            },
-            enabled = !uiState.isCapturing,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            if (uiState.isCapturing) {
-                CircularProgressIndicator(modifier = Modifier.height(18.dp))
-                Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.capture_in_progress))
-            } else {
-                Text(stringResource(R.string.capture_action))
-            }
-        }
-
         uiState.error?.let { error ->
             // The localized wording lives here, not in the ViewModel; the
             // platform's own message is shown when it has one to offer.
-            Text(
-                error.detail ?: stringResource(R.string.capture_failed),
-                color = MaterialTheme.colorScheme.error,
+            NoticeChip(
+                icon = RlIcons.Fail,
+                short = stringResource(R.string.capture_failed),
+                full = error.detail,
+                tint = c.fail,
+                startExpanded = true,
             )
             TextButton(onClick = viewModel::dismissError) {
                 Text(stringResource(R.string.capture_dismiss_error))
             }
         }
 
+        // What was just recorded, as chips: sealed, which hash, where.
         uiState.lastEvent?.let { event ->
-            Text(
-                stringResource(R.string.capture_last_capture),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            EventCard(event)
+            ChipFlow {
+                InfoChip(RlIcons.ShieldGood, stringResource(R.string.capture_sealed), c.pass)
+                InfoChip(RlIcons.Hash, event.merkle?.root?.take(HASH_CHIP_LENGTH) ?: "—", c.primary)
+                val location = event.metadata.location
+                InfoChip(
+                    if (location == null) RlIcons.GpsOff else RlIcons.Location,
+                    if (location == null) {
+                        stringResource(R.string.capture_no_gps)
+                    } else {
+                        "±${location.accuracyMeters.roundToInt()} m"
+                    },
+                    if (location == null) c.unavailable else c.info,
+                )
+            }
         }
     }
 }
@@ -349,34 +511,47 @@ private fun PermissionRequestPanel(
     hasLocationPermission: Boolean,
     onRequestPermissions: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val c = RealityLockThemeTokens.colors
+    Column(
+        modifier = Modifier.padding(top = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        BrandMark(size = 84.dp)
         Text(
             stringResource(R.string.permissions_title),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
+            color = c.ink,
         )
-        Text(
+        // One chip per permission: what it is, and whether it is required. The
+        // un-bundled, itemised wording the consent rules call for (research/06 §3)
+        // is unchanged — it is one tap away on each chip.
+        NoticeChip(
+            RlIcons.Capture,
+            stringResource(R.string.permissions_camera_short),
             stringResource(R.string.permissions_camera_rationale),
-            style = MaterialTheme.typography.bodyMedium,
+            c.primary,
         )
-        Text(
+        NoticeChip(
+            RlIcons.Location,
+            stringResource(R.string.permissions_location_short),
             stringResource(R.string.permissions_location_rationale),
-            style = MaterialTheme.typography.bodyMedium,
+            c.info,
         )
-        Text(
+        NoticeChip(
+            RlIcons.Motion,
+            stringResource(R.string.permissions_motion_short),
             stringResource(R.string.permissions_motion_note),
-            style = MaterialTheme.typography.bodySmall,
+            c.unavailable,
         )
-        Button(onClick = onRequestPermissions) {
-            Text(
-                stringResource(
-                    if (hasLocationPermission) {
-                        R.string.permissions_grant_camera
-                    } else {
-                        R.string.permissions_grant_all
-                    },
-                ),
-            )
-        }
+        GradientButton(
+            text = stringResource(
+                if (hasLocationPermission) R.string.permissions_grant_camera else R.string.permissions_grant_all,
+            ),
+            icon = RlIcons.Lock,
+            onClick = onRequestPermissions,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -395,6 +570,9 @@ private fun HistoryTab(
     // Which capture is open full-size, if any. Held by id rather than by the
     // event object so the viewer survives the list being refreshed underneath it.
     var viewingEventId by remember { mutableStateOf<String?>(null) }
+
+    // The Merkle explorer, drawn over the list like the full-size viewer.
+    var exploringEventId by remember { mutableStateOf<String?>(null) }
 
     // The app version is stamped into the exported bundle's manifest, so a
     // recipient can tell which build produced the archive. Read here because a
@@ -431,18 +609,16 @@ private fun HistoryTab(
         viewingEventId = null
     }
 
-    if (events.isEmpty()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                stringResource(R.string.history_empty),
-                style = MaterialTheme.typography.bodyMedium,
-            )
+    exploringEventId?.let { openId ->
+        events.firstOrNull { it.eventId == openId }?.let { openEvent ->
+            ProofExplorerScreen(event = openEvent, onClose = { exploringEventId = null })
+            return@HistoryTab
         }
+        exploringEventId = null
+    }
+
+    if (events.isEmpty()) {
+        HistoryEmpty()
         return
     }
 
@@ -547,74 +723,89 @@ private fun HistoryTab(
         }
     }
 
+    // Keep every card's trust ring filled in. Re-runs when a capture's sync stage
+    // changes (the media arriving firms up an "incomplete") or the network does.
+    val online by rememberIsOnline()
+    val stageKey = events.joinToString { "${it.eventId}:${proofsState.syncStates[it.eventId]?.stage}" }
+    LaunchedEffect(stageKey, online) {
+        proofsViewModel.refreshVerdicts(events.take(MAX_AUTO_VERIFY).map { it.eventId }, online)
+    }
+    LaunchedEffect(proofsState.syncRequested) {
+        if (proofsState.syncRequested) {
+            delay(SYNC_NOTICE_MILLIS)
+            proofsViewModel.dismissSyncNotice()
+        }
+    }
+
+    val colors = RealityLockThemeTokens.colors
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        // Was `.padding(16.dp)` on the LazyColumn itself, which shrinks the
-        // viewport: the bottom 16dp never scrolled, and once the navigation-bar
-        // inset was added on top there was no way to bring the last card out
-        // from under the bar. As contentPadding the viewport stays full height
-        // and runs behind the bar, so the final card scrolls fully clear.
+        // As contentPadding (not padding on the list) the viewport stays full
+        // height and the last card scrolls fully clear of the bar below.
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = 16.dp,
+            top = 8.dp,
             bottom = 16.dp + scrollableBottomInset(),
         ),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // The capture count, which used to live in the tab label as
-        // "History (3)". Four fixed tabs get about 90dp each and that form did
-        // not fit at any readable size — it wrapped to two lines, then
-        // ellipsised to "History…" and hid the number entirely. A Material
-        // badge fixed the width but sat on top of the word and, being red,
-        // read as an alert rather than a count. Here there is room, and this is
-        // the screen the number is actually about.
         item {
-            Text(
-                text = if (events.size == 1) "1 capture" else "${events.size} captures",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            HistoryStats(
+                captures = events.size,
+                synced = events.count { proofsState.syncStates[it.eventId]?.stage == SyncStage.COMPLETE },
+                verified = events.count { proofsState.verdicts[it.eventId]?.report?.verdict == VerificationReport.Verdict.VERIFIED },
+                alerts = events.count {
+                    when (proofsState.verdicts[it.eventId]?.report?.verdict) {
+                        VerificationReport.Verdict.FAILED, VerificationReport.Verdict.INVALID_FORMAT -> true
+                        else -> false
+                    }
+                },
             )
         }
 
         item {
-            SyncSummaryPanel(
+            SyncStrip(
+                waiting = events.count { proofsState.syncStates[it.eventId]?.stage != SyncStage.COMPLETE },
                 syncRequested = proofsState.syncRequested,
                 onSyncNow = proofsViewModel::requestSync,
-                onDismiss = proofsViewModel::dismissSyncNotice,
             )
         }
 
         proofsState.verifyError?.let { reason ->
             item {
-                Text(
+                NoticeChip(
+                    RlIcons.CloudOff,
+                    stringResource(R.string.chip_verifier_unreachable),
                     stringResource(R.string.verify_unreachable, reason),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    colors.warn,
                 )
             }
         }
 
         proofsState.certificateError?.let { reason ->
             item {
-                Text(
+                NoticeChip(
+                    RlIcons.Fail,
+                    stringResource(R.string.chip_save_failed),
                     stringResource(R.string.certificate_save_failed, reason),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    colors.fail,
                 )
             }
         }
 
         items(events, key = { it.eventId }) { event ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                EventCard(
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                CaptureCard(
                     event = event,
-                    onDelete = { onDelete(event.eventId) },
                     syncState = proofsState.syncStates[event.eventId],
+                    verdict = proofsState.verdicts[event.eventId],
+                    ringWorking = event.eventId in proofsState.quietVerifying,
                     isVerifying = proofsState.verifyingEventId == event.eventId,
                     isBuildingCertificate = proofsState.buildingCertificateFor == event.eventId,
                     onVerify = { proofsViewModel.verify(event.eventId) },
                     onVerifyOffline = { proofsViewModel.verifyOffline(event.eventId) },
+                    onExplore = { exploringEventId = event.eventId },
                     onRetrySync = { proofsViewModel.retrySync(event.eventId) },
                     onExportCertificate = {
                         proofsViewModel.buildCertificate(
@@ -644,6 +835,7 @@ private fun HistoryTab(
                             exportingAppVersion = appVersionLabel,
                         )
                     },
+                    onDelete = { onDelete(event.eventId) },
                     onOpenViewer = { viewingEventId = event.eventId },
                 )
 
@@ -663,38 +855,6 @@ private fun HistoryTab(
     }
 }
 
-/** Offline-first explanation plus a manual "sync now" trigger. */
-@Composable
-private fun SyncSummaryPanel(
-    syncRequested: Boolean,
-    onSyncNow: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                stringResource(R.string.sync_offline_note),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            if (syncRequested) {
-                Text(
-                    stringResource(R.string.sync_queued),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.capture_dismiss_error))
-                }
-            } else {
-                Button(onClick = onSyncNow) { Text(stringResource(R.string.sync_now)) }
-            }
-        }
-    }
-}
-
 /** Verdict label for the certificate, mirroring the on-screen wording. */
 @StringRes
 private fun VerificationReport.Verdict.uiLabelRes(): Int = when (this) {
@@ -705,307 +865,6 @@ private fun VerificationReport.Verdict.uiLabelRes(): Int = when (this) {
     VerificationReport.Verdict.UNKNOWN -> R.string.verify_verdict_unknown
 }
 
-@Composable
-private fun EventCard(
-    event: CapturedEvent,
-    onDelete: (() -> Unit)? = null,
-    syncState: SyncState? = null,
-    isVerifying: Boolean = false,
-    isBuildingCertificate: Boolean = false,
-    onVerify: (() -> Unit)? = null,
-    onVerifyOffline: (() -> Unit)? = null,
-    onRetrySync: (() -> Unit)? = null,
-    onExportCertificate: (() -> Unit)? = null,
-    onExportAnnexure: (() -> Unit)? = null,
-    onExportBundle: (() -> Unit)? = null,
-    /** Opens the full-size viewer. The card shows a thumbnail regardless. */
-    onOpenViewer: (() -> Unit)? = null,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            // The photograph, at last. Until this was here the card listed a
-            // timestamp, a hash and a size — a description of evidence with no
-            // way to look at it, on media stored where no other app can reach it.
-            // Showing it beside its own metadata is also what makes the record
-            // presentable to anyone else: a page of hex is not.
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                EvidenceThumbnail(event = event, onClick = onOpenViewer)
-                Text(
-                    event.metadata.timestamp.iso8601,
-                    style = MaterialTheme.typography.titleSmall,
-                )
-            }
-            Divider()
-            DetailRow(
-                stringResource(R.string.event_label_id),
-                stringResource(
-                    R.string.event_id_truncated,
-                    event.eventId.take(EVENT_ID_PREVIEW_LENGTH),
-                ),
-            )
-            DetailRow(
-                stringResource(R.string.event_label_size),
-                stringResource(R.string.event_size_bytes, event.media.byteLength),
-            )
-
-            val location = event.metadata.location
-            DetailRow(
-                stringResource(R.string.event_label_location),
-                if (location == null) {
-                    stringResource(R.string.event_value_not_recorded)
-                } else {
-                    stringResource(
-                        R.string.event_location_format,
-                        location.latitude,
-                        location.longitude,
-                        location.accuracyMeters,
-                    )
-                },
-            )
-            if (location?.isMock == true) {
-                Text(
-                    stringResource(R.string.event_mock_location_detected),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            // A stale fix is kept, not discarded — but it is never presented as
-            // if it described the capture instant.
-            if (LocationSource.isFixStale(location?.fixAgeMillis)) {
-                Text(
-                    stringResource(
-                        R.string.event_location_stale,
-                        (location?.fixAgeMillis ?: 0L) / MILLIS_PER_SECOND,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-
-            val motion = event.metadata.motion
-            DetailRow(
-                stringResource(R.string.event_label_motion),
-                if (motion == null) {
-                    stringResource(R.string.event_value_not_recorded)
-                } else {
-                    stringResource(R.string.event_motion_captured)
-                },
-            )
-            val merkle = event.merkle
-            DetailRow(
-                stringResource(R.string.event_label_hash),
-                if (merkle == null) {
-                    stringResource(R.string.event_hash_pending)
-                } else {
-                    stringResource(R.string.event_hash_truncated, merkle.root.take(HASH_PREVIEW_LENGTH))
-                },
-            )
-            val signature = event.signature
-            DetailRow(
-                stringResource(R.string.event_label_signature),
-                when {
-                    signature == null -> stringResource(R.string.event_value_not_recorded)
-                    signature.attestationCertificateChain != null ->
-                        stringResource(R.string.event_signature_attested)
-                    else -> stringResource(R.string.event_signature_unattested)
-                },
-            )
-
-            // ---- Phase 5: where this proof stands on the backend ------------
-            syncState?.let { state ->
-                DetailRow(
-                    stringResource(R.string.sync_label),
-                    stringResource(state.stage.labelRes()),
-                )
-                // The reason is shown, not swallowed: a stalled sync with no
-                // explanation is indistinguishable from a broken app.
-                //
-                // A RETRYABLE failure (stage not FAILED — permanent ones go straight
-                // to FAILED) is explained first, because its raw text alone
-                // ("timeout") reads as breakage when it is usually a server still
-                // waking from idle. The raw reason stays visible beneath it.
-                state.lastError?.let { error ->
-                    val retrying = state.stage != SyncStage.FAILED
-                    if (retrying) {
-                        Text(
-                            stringResource(R.string.sync_retrying_explained),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Text(
-                        error,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (retrying) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
-                    )
-                }
-            }
-
-            // Verify stays a primary, full-width action; everything else moves
-            // into an overflow menu.
-            //
-            // This is the approved design's "actions are triaged" rule, and it is
-            // also a bug fix. Five TextButtons in one un-wrapping Row exceeded the
-            // card width, and Compose resolved that by squeezing the fourth to
-            // roughly one character — "Export evidence" rendered as a vertical
-            // column of single letters running off the card. A Row cannot hold
-            // five labels of this length at any phone width, so the fix is fewer
-            // things in the row, not a narrower font.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                onVerify?.let {
-                    Button(
-                        onClick = it,
-                        enabled = !isVerifying,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(
-                            stringResource(
-                                if (isVerifying) R.string.verify_running else R.string.verify_action,
-                            ),
-                        )
-                    }
-                }
-
-                var menuOpen by remember { mutableStateOf(false) }
-                Box {
-                    IconButton(
-                        onClick = { menuOpen = true },
-                        // 48dp keeps the target above the accessibility minimum;
-                        // the glyph itself is much smaller than the tappable area.
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Text(
-                            "\u22EE",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        onVerifyOffline?.let { action ->
-                            DropdownMenuItem(
-                                enabled = !isVerifying,
-                                text = { Text(stringResource(R.string.verify_offline_action)) },
-                                onClick = { menuOpen = false; action() },
-                            )
-                        }
-                        onExportCertificate?.let { action ->
-                            DropdownMenuItem(
-                                enabled = !isBuildingCertificate,
-                                text = {
-                                    Text(
-                                        stringResource(
-                                            if (isBuildingCertificate) {
-                                                R.string.certificate_generating
-                                            } else {
-                                                R.string.certificate_action
-                                            },
-                                        ),
-                                    )
-                                },
-                                onClick = { menuOpen = false; action() },
-                            )
-                        }
-                        // A separate item, never a variant of the one above. The
-                        // certificate reports what this system computed; the
-                        // annexure is a draft form a person completes and signs.
-                        // One entry emitting both would blur exactly the line BSA
-                        // 2023 s.63 draws (research/06 §1.3).
-                        onExportAnnexure?.let { action ->
-                            DropdownMenuItem(
-                                enabled = !isBuildingCertificate,
-                                text = {
-                                    Text(
-                                        stringResource(
-                                            if (isBuildingCertificate) {
-                                                R.string.annexure_generating
-                                            } else {
-                                                R.string.annexure_action
-                                            },
-                                        ),
-                                    )
-                                },
-                                onClick = { menuOpen = false; action() },
-                            )
-                        }
-                        // The evidence itself, as opposed to the two documents
-                        // about it. Distinct wording matters: someone handing a
-                        // case file over needs to know which of the three
-                        // contains the photograph.
-                        onExportBundle?.let { action ->
-                            DropdownMenuItem(
-                                enabled = !isBuildingCertificate,
-                                text = {
-                                    Text(
-                                        stringResource(
-                                            if (isBuildingCertificate) {
-                                                R.string.bundle_generating
-                                            } else {
-                                                R.string.bundle_action
-                                            },
-                                        ),
-                                    )
-                                },
-                                onClick = { menuOpen = false; action() },
-                            )
-                        }
-                        // Only offered when there is something to retry.
-                        if (syncState?.stage == SyncStage.FAILED && onRetrySync != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.sync_retry)) },
-                                onClick = { menuOpen = false; onRetrySync() },
-                            )
-                        }
-                        onDelete?.let { action ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        stringResource(R.string.history_delete),
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                },
-                                onClick = { menuOpen = false; action() },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@StringRes
-private fun SyncStage.labelRes(): Int = when (this) {
-    SyncStage.PENDING -> R.string.sync_stage_pending
-    SyncStage.PACKAGE_STORED -> R.string.sync_stage_package_stored
-    SyncStage.COMPLETE -> R.string.sync_stage_complete
-    SyncStage.FAILED -> R.string.sync_stage_failed
-}
-
-@Composable
-private fun DetailRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodySmall)
-        Text(value, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
 private fun Context.isGranted(permission: String): Boolean =
     ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
@@ -1014,30 +873,13 @@ private const val PREVIEW_ASPECT_RATIO = 3f / 4f
 /** Peak opacity and fade of the shutter flash — a cue that the press registered. */
 private const val SHUTTER_FLASH_ALPHA = 0.85f
 private const val SHUTTER_FLASH_MILLIS = 220
-private const val EVENT_ID_PREVIEW_LENGTH = 8
-private const val MILLIS_PER_SECOND = 1_000L
-private const val HASH_PREVIEW_LENGTH = 16
+private const val HASH_CHIP_LENGTH = 10
+private const val GOOD_ACCURACY_METERS = 25f
+private const val SEAL_LINGER_MILLIS = 2_400L
 
-/**
- * A tab label that cannot wrap.
- *
- * Four fixed tabs share the width, so each gets a quarter of it — 90dp on a
- * 360dp-wide phone. "History (12)" does not fit that at the default `titleSmall`
- * used by `Tab`, and Compose's answer to not fitting is to wrap: the History tab
- * rendered as two lines while its three neighbours rendered as one, pushing the
- * whole row taller and misaligning every label.
- *
- * `maxLines = 1` makes that impossible rather than unlikely, and the smaller
- * style is what makes the longest realistic label fit inside one line instead of
- * being ellipsised. The count stays in the label — it is the one number worth
- * seeing without opening the tab.
- */
-@Composable
-private fun TabLabel(text: String) {
-    Text(
-        text = text,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        style = MaterialTheme.typography.labelLarge,
-    )
-}
+/** How long the satellite legend stays up if nobody taps it away. */
+private const val SKY_LEGEND_MILLIS = 9_000L
+private const val MAX_AUTO_VERIFY = 12
+private const val SYNC_NOTICE_MILLIS = 4_000L
+private const val SYNC_POLL_MILLIS = 2_000L
+

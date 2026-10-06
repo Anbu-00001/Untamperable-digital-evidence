@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 /**
  * Window-inset helpers shared by every scrolling surface in the app.
@@ -61,10 +63,22 @@ import androidx.compose.ui.unit.Dp
  */
 @Composable
 fun scrollableBottomInset(): Dp =
-    WindowInsets.safeDrawing
-        .only(WindowInsetsSides.Bottom)
-        .asPaddingValues()
-        .calculateBottomPadding()
+    if (LocalBottomInsetHandled.current) {
+        0.dp
+    } else {
+        WindowInsets.safeDrawing
+            .only(WindowInsetsSides.Bottom)
+            .asPaddingValues()
+            .calculateBottomPadding()
+    }
+
+/**
+ * True below a container that already pads for the bottom system inset — the
+ * floating navigation bar. `asPaddingValues()` does not see inset consumption, so
+ * without this every list under the bar would reserve the same strip a second
+ * time and end in a dead gap.
+ */
+val LocalBottomInsetHandled = compositionLocalOf { false }
 
 /**
  * The insets fixed chrome should consume: the top bar area plus both sides.

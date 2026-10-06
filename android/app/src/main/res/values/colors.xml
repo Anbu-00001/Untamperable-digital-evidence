@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launch-time colours only; the running UI takes its palette from
+         ui/theme/RealityLockColors.kt. Kept equal to that file's `bg`. -->
+    <color name="rl_navy">#FF060A18</color>
+</resources>

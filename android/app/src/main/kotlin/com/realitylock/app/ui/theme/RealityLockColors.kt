@@ -1,6 +1,7 @@
 package com.realitylock.app.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -8,6 +9,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 
 /**
  * The colour tokens from the Reality Lock design project, translated for Compose.
@@ -58,7 +61,17 @@ data class RealityLockColors(
     val neutral: Color,
     val neutralSoft: Color,
     val info: Color,
-    val infoSoft: Color,)
+    val infoSoft: Color,
+    /**
+     * Decorative only — brand gradients and backdrop glow. Never a status colour.
+     * Violet is deliberately NOT used for [accent]: `unknown` owns that hue, and a
+     * brand accent in the same hue would make "this app cannot read this check"
+     * look like decoration.
+     */
+    val accent: Color,
+    val glowA: Color,
+    val glowB: Color,
+)
 
 private val LightColors = RealityLockColors(
     bg = Color(0xFFF6F9FB),  // oklch(98% 0.004 250)
@@ -84,32 +97,46 @@ private val LightColors = RealityLockColors(
     neutralSoft = Color(0xFFE8EBEF),  // oklch(94% 0.006 250)
     info = Color(0xFF006980),  // oklch(46% 0.13 210)
     infoSoft = Color(0xFFD2EEF3),  // oklch(93% 0.03 210)
+    accent = Color(0xFF2563EB),
+    glowA = Color(0xFF22D3EE),
+    glowB = Color(0xFF3B82F6),
 )
 
+/**
+ * The dark "cyber-security" palette — the one the app actually ships.
+ *
+ * Deep navy surfaces with a cyan -> electric-blue brand gradient. Every STATUS
+ * colour keeps its meaning from the original design (green pass, rose fail,
+ * amber incomplete, grey-blue unavailable, violet unknown); only their lightness
+ * was tuned to glow on navy while staying above 4.5:1 against [surface].
+ */
 private val DarkColors = RealityLockColors(
-    bg = Color(0xFF0F1215),  // oklch(18% 0.007 250)
-    surface = Color(0xFF1A1D21),  // oklch(23% 0.009 250)
-    surfaceAlt = Color(0xFF23272B),  // oklch(27% 0.01 250)
-    border = Color(0xFF363B41),  // oklch(35% 0.012 250)
-    ink = Color(0xFFE6E8EA),  // oklch(93% 0.004 250)
-    inkMuted = Color(0xFF9A9FA5),  // oklch(70% 0.01 250)
-    primary = Color(0xFF30C2D8),  // oklch(75% 0.12 210)
-    primaryText = Color(0xFF070C0D),  // oklch(15% 0.01 210)
-    primarySoft = Color(0xFF03343C),  // oklch(30% 0.05 210)
-    pass = Color(0xFF6BC670),  // oklch(75% 0.15 145)
-    passSoft = Color(0xFF133015),  // oklch(28% 0.06 145)
-    fail = Color(0xFFFD736D),  // oklch(72% 0.17 25)
-    failSoft = Color(0xFF4B1D1B),  // oklch(30% 0.07 25)
-    warn = Color(0xFFE9B452),  // oklch(80% 0.13 80)
-    warnSoft = Color(0xFF402C05),  // oklch(31% 0.06 80)
-    unknown = Color(0xFFBCA1ED),  // oklch(76% 0.11 300)
-    unknownSoft = Color(0xFF322745),  // oklch(30% 0.055 300)
-    unavailable = Color(0xFF9C9FA2),  // oklch(70% 0.006 250)
-    unavailableSoft = Color(0xFF2A2E33),  // oklch(30% 0.01 250)
-    neutral = Color(0xFF9A9FA5),  // oklch(70% 0.01 250)
-    neutralSoft = Color(0xFF26292D),  // oklch(28% 0.008 250)
-    info = Color(0xFF30C2D8),  // oklch(75% 0.12 210)
-    infoSoft = Color(0xFF03343C),  // oklch(30% 0.05 210)
+    bg = Color(0xFF060A18),
+    surface = Color(0xFF0E1630),
+    surfaceAlt = Color(0xFF152045),
+    border = Color(0xFF263261),
+    ink = Color(0xFFE9EFFF),
+    inkMuted = Color(0xFF8A97C0),
+    primary = Color(0xFF22D3EE),
+    primaryText = Color(0xFF03131A),
+    primarySoft = Color(0xFF0A3140),
+    pass = Color(0xFF34D399),
+    passSoft = Color(0xFF0A3328),
+    fail = Color(0xFFFB7185),
+    failSoft = Color(0xFF42182A),
+    warn = Color(0xFFFBBF24),
+    warnSoft = Color(0xFF3B2B08),
+    unknown = Color(0xFFA78BFA),
+    unknownSoft = Color(0xFF2B2252),
+    unavailable = Color(0xFF93A3C8),
+    unavailableSoft = Color(0xFF1A2548),
+    neutral = Color(0xFF8A97C0),
+    neutralSoft = Color(0xFF18224A),
+    info = Color(0xFF60A5FA),
+    infoSoft = Color(0xFF112B55),
+    accent = Color(0xFF3B82F6),
+    glowA = Color(0xFF22D3EE),
+    glowB = Color(0xFF7C3AED),
 )
 
 /**
@@ -125,7 +152,10 @@ val LocalRealityLockColors = staticCompositionLocalOf<RealityLockColors> {
 fun RealityLockTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
     val colors = if (darkTheme) DarkColors else LightColors
     CompositionLocalProvider(LocalRealityLockColors provides colors) {
-        MaterialTheme(colorScheme = colors.toMaterialScheme(darkTheme)) {
+        MaterialTheme(
+            colorScheme = colors.toMaterialScheme(darkTheme),
+            typography = CyberTypography,
+        ) {
             content()
         }
     }
@@ -171,6 +201,22 @@ private fun RealityLockColors.toMaterialScheme(darkTheme: Boolean) =
         errorContainer = failSoft,
         onErrorContainer = fail,
     )
+
+/**
+ * Bolder headings and tracked-out labels, so the screens read as "dashboard"
+ * rather than "form". Body sizes are untouched: legibility at arm's length is the
+ * one thing this must not trade away.
+ */
+private val CyberTypography = Typography().let { base ->
+    base.copy(
+        headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp),
+        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.Bold),
+        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        titleSmall = base.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+        labelMedium = base.labelMedium.copy(fontWeight = FontWeight.Medium, letterSpacing = 0.6.sp),
+        labelSmall = base.labelSmall.copy(fontWeight = FontWeight.Medium, letterSpacing = 0.5.sp),
+    )
+}
 
 /** Shorthand: `RealityLockTheme.colors.pass`. */
 object RealityLockThemeTokens {

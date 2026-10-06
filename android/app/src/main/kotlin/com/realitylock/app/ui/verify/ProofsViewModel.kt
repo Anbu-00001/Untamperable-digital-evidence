@@ -13,6 +13,7 @@ import com.realitylock.app.export.EvidenceBundle
 import com.realitylock.app.core.config.EvidenceBundleConfig
 import com.realitylock.app.core.di.AppContainer
 import com.realitylock.app.core.time.ClockCorrelator
+import com.realitylock.app.sync.SyncStage
 import com.realitylock.app.sync.SyncState
 import com.realitylock.app.verify.OfflineProofVerifier
 import com.realitylock.app.verify.VerificationClient
@@ -49,8 +50,26 @@ data class PendingCertificate(
         bytes.contentHashCode()
 }
 
+/**
+ * The latest verification result for one capture, kept so its trust ring can be
+ * drawn without the user pressing anything.
+ *
+ * [syncStage] is the sync stage the result was produced against. A server verdict
+ * made before the media arrived says "incomplete"; once the media is stored that
+ * verdict is stale, and the stage change is what triggers a fresh one.
+ */
+data class CachedVerdict(
+    val report: VerificationReport,
+    val offline: Boolean,
+    val syncStage: SyncStage?,
+)
+
 data class ProofsUiState(
     val syncStates: Map<String, SyncState> = emptyMap(),
+    /** Latest verdict per event, for the History trust rings. */
+    val verdicts: Map<String, CachedVerdict> = emptyMap(),
+    /** Events being checked in the background right now. */
+    val quietVerifying: Set<String> = emptySet(),
     val isSyncing: Boolean = false,
     val syncRequested: Boolean = false,
     /** Event currently being verified, so only its row shows a spinner. */
@@ -163,7 +182,14 @@ class ProofsViewModel(
             _uiState.update {
                 when (result) {
                     is VerificationClient.Result.Ok ->
-                        it.copy(verifyingEventId = null, report = result.report, reportEventId = eventId)
+                        it.copy(
+                            verifyingEventId = null,
+                            report = result.report,
+                            reportEventId = eventId,
+                            verdicts = it.verdicts + (eventId to CachedVerdict(
+                                result.report, offline = false, syncStage = it.syncStates[eventId]?.stage,
+                            )),
+                        )
                     is VerificationClient.Result.Unreachable ->
                         it.copy(verifyingEventId = null, verifyError = result.reason)
                 }
@@ -197,16 +223,7 @@ class ProofsViewModel(
         }
 
         viewModelScope.launch {
-            val report = withContext(ioDispatcher) {
-                val bytes = repository.readPackageBytes(eventId) ?: return@withContext null
-                // A missing media file is not an error here: the verifier reports
-                // `mediaHashMatch` as unavailable, which is the true answer.
-                val media = repository.findById(eventId)
-                    ?.let { File(it.mediaFilePath) }
-                    ?.takeIf { it.isFile }
-                    ?.let { OfflineProofVerifier.MediaSource.of(it) }
-                OfflineProofVerifier.verify(String(bytes, Charsets.UTF_8), media)
-            }
+            val report = withContext(ioDispatcher) { runOfflineVerifier(eventId) }
             _uiState.update {
                 if (report == null) {
                     it.copy(verifyingEventId = null, verifyError = ERROR_PACKAGE_UNREADABLE)
@@ -216,6 +233,75 @@ class ProofsViewModel(
                         report = report,
                         reportEventId = eventId,
                         reportIsOffline = true,
+                        // A phone-side result never replaces a server verdict on the ring.
+                        verdicts = if (it.verdicts[eventId]?.offline == false) {
+                            it.verdicts
+                        } else {
+                            it.verdicts + (eventId to CachedVerdict(report, true, it.syncStates[eventId]?.stage))
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    /** Blocking; call off the main thread. Null when the stored package is unreadable. */
+    private fun runOfflineVerifier(eventId: String): VerificationReport? {
+        val bytes = repository.readPackageBytes(eventId) ?: return null
+        // A missing media file is not an error here: the verifier reports
+        // `mediaHashMatch` as unavailable, which is the true answer.
+        val media = repository.findById(eventId)
+            ?.let { File(it.mediaFilePath) }
+            ?.takeIf { it.isFile }
+            ?.let { OfflineProofVerifier.MediaSource.of(it) }
+        return OfflineProofVerifier.verify(String(bytes, Charsets.UTF_8), media)
+    }
+
+    /**
+     * Keeps every History card's trust ring filled in, without any button press.
+     *
+     * Online, each capture is checked by the backend (the full verdict). Offline —
+     * or if the backend cannot be reached — it is checked on this phone instead,
+     * and the ring is marked as phone-checked, because that result can never be
+     * VERIFIED. The first unreachable answer ends the pass, so a sleeping server
+     * costs one wait, not one per capture.
+     *
+     * A capture is only re-checked when its sync stage has changed since its last
+     * result (the media arriving is what turns "incomplete" into something
+     * firmer) or when a phone-only result can now be upgraded to a server one.
+     */
+    fun refreshVerdicts(eventIds: List<String>, online: Boolean) {
+        viewModelScope.launch {
+            var serverReachable = online
+            for (eventId in eventIds) {
+                val state = _uiState.value
+                val stage = state.syncStates[eventId]?.stage
+                val cached = state.verdicts[eventId]
+                val current = cached != null && cached.syncStage == stage &&
+                    (!serverReachable || !cached.offline)
+                if (current || eventId in state.quietVerifying) continue
+
+                _uiState.update { it.copy(quietVerifying = it.quietVerifying + eventId) }
+                var result: CachedVerdict? = null
+                if (serverReachable) {
+                    val bytes = withContext(ioDispatcher) { repository.readPackageBytes(eventId) }
+                    if (bytes != null) {
+                        when (val answer = withContext(ioDispatcher) { container.verificationClient.verify(bytes) }) {
+                            is VerificationClient.Result.Ok ->
+                                result = CachedVerdict(answer.report, offline = false, syncStage = stage)
+                            is VerificationClient.Result.Unreachable -> serverReachable = false
+                        }
+                    }
+                }
+                if (result == null && cached == null) {
+                    withContext(ioDispatcher) { runOfflineVerifier(eventId) }?.let {
+                        result = CachedVerdict(it, offline = true, syncStage = stage)
+                    }
+                }
+                _uiState.update {
+                    it.copy(
+                        quietVerifying = it.quietVerifying - eventId,
+                        verdicts = result?.let { r -> it.verdicts + (eventId to r) } ?: it.verdicts,
                     )
                 }
             }

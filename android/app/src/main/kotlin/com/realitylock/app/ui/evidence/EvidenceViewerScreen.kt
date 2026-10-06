@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,6 +47,13 @@ import com.realitylock.app.R
 import com.realitylock.app.capture.model.CapturedEvent
 import com.realitylock.app.ui.common.chromeInsets
 import com.realitylock.app.ui.common.scrollableBottomInset
+import com.realitylock.app.ui.components.ChipFlow
+import com.realitylock.app.ui.components.GlassCard
+import com.realitylock.app.ui.components.IconBadge
+import com.realitylock.app.ui.components.InfoChip
+import com.realitylock.app.ui.components.NoticeChip
+import com.realitylock.app.ui.components.PlaceLine
+import com.realitylock.app.ui.components.RlIcons
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
 import com.realitylock.app.verify.VerificationReport
 
@@ -178,24 +187,24 @@ private fun EvidenceTopBar(onClose: () -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = stringResource(R.string.evidence_title),
-            style = MaterialTheme.typography.titleMedium,
-            color = colors.ink,
-            modifier = Modifier.weight(1f).padding(start = 8.dp),
-        )
-        TextButton(
+        IconButton(
             onClick = onClose,
-            // Explicit rather than relying on the component default, so the
-            // target stays above the 44dp minimum whatever the theme does to
-            // button metrics.
+            // Explicit so the target stays above the 44dp minimum whatever the
+            // theme does to button metrics.
             modifier = Modifier.defaultMinSize(
                 minWidth = EvidenceDefaults.MinTouchTarget,
                 minHeight = EvidenceDefaults.MinTouchTarget,
             ),
         ) {
-            Text(stringResource(R.string.evidence_close))
+            Icon(RlIcons.Close, contentDescription = stringResource(R.string.evidence_close), tint = colors.ink)
         }
+        IconBadge(RlIcons.Photo, colors.primary, size = 32.dp)
+        Text(
+            text = stringResource(R.string.evidence_title),
+            style = MaterialTheme.typography.titleMedium,
+            color = colors.ink,
+            modifier = Modifier.weight(1f).padding(start = 10.dp),
+        )
     }
 }
 
@@ -393,7 +402,6 @@ private fun disclosureStyleFor(verdict: VerificationReport.Verdict?): Disclosure
  */
 @Composable
 private fun VerificationDisclosure(verdict: VerificationReport.Verdict?) {
-    val colors = RealityLockThemeTokens.colors
     val style = disclosureStyleFor(verdict)
     val shape = RoundedCornerShape(PHOTO_CORNER_DP.dp)
 
@@ -404,127 +412,95 @@ private fun VerificationDisclosure(verdict: VerificationReport.Verdict?) {
             .background(style.bg)
             .border(1.dp, style.fg, shape)
             .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            text = stringResource(R.string.evidence_verification_title),
-            style = MaterialTheme.typography.labelMedium,
-            color = style.fg,
-        )
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Status is never colour alone. The glyph and the word both carry it,
-            // so a greyscale screenshot — how these end up in a case file — and a
-            // reader who cannot separate red from green both still get the state.
             Text(
                 text = style.glyph,
                 color = style.fg,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 text = stringResource(style.labelRes),
                 color = style.fg,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
         }
-        Text(
-            text = stringResource(style.bodyRes),
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.ink,
-        )
-        HorizontalDivider(color = style.fg.copy(alpha = DIVIDER_ALPHA))
-        // The ceiling on the whole screen, present under every verdict including
-        // VERIFIED: a rendered image is a rendering of bytes, not proof that the
-        // bytes are the originals.
-        Text(
-            text = stringResource(R.string.evidence_display_disclaimer),
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.inkMuted,
+        // What the verdict does and does not say, and that displaying a photo is
+        // not itself a check, are one tap away rather than printed in full.
+        NoticeChip(
+            icon = RlIcons.Info,
+            short = stringResource(R.string.evidence_verification_title),
+            full = stringResource(style.bodyRes) + "\n\n" + stringResource(R.string.evidence_display_disclaimer),
+            tint = style.fg,
         )
     }
 }
 
-/** Capture time, location and device — the three facts the photograph needs. */
 @Composable
 private fun CaptureFacts(event: CapturedEvent) {
     val colors = RealityLockThemeTokens.colors
-    val shape = RoundedCornerShape(PHOTO_CORNER_DP.dp)
     val location = event.metadata.location
     val device = event.metadata.device
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(colors.surface)
-            .border(1.dp, colors.border, shape)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.evidence_section_details),
-            style = MaterialTheme.typography.labelMedium,
-            color = colors.inkMuted,
-        )
+    GlassCard(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                IconBadge(RlIcons.Time, colors.info, size = 34.dp)
+                Text(event.metadata.timestamp.iso8601, style = MaterialTheme.typography.titleSmall, color = colors.ink)
+            }
 
-        FactRow(
-            label = stringResource(R.string.evidence_label_time),
-            value = event.metadata.timestamp.iso8601,
-        )
-
-        if (location == null) {
-            FactRow(
-                label = stringResource(R.string.evidence_label_location),
-                value = stringResource(R.string.evidence_location_absent),
-            )
-        } else {
-            FactRow(
-                label = stringResource(R.string.evidence_label_location),
-                value = stringResource(
-                    R.string.evidence_location_format,
-                    location.latitude,
-                    location.longitude,
-                ),
-                note = stringResource(
-                    R.string.evidence_location_accuracy,
-                    location.accuracyMeters,
-                ),
-            )
-            Text(
-                text = stringResource(R.string.evidence_location_precision_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.inkMuted,
-            )
-            // A mock provider is material to anyone reading this location, so it
-            // travels with the location rather than being left to the checks list.
-            if (location.isMock) {
-                Text(
-                    text = stringResource(R.string.evidence_location_mock),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.fail,
-                    fontWeight = FontWeight.SemiBold,
+            if (location == null) {
+                InfoChip(RlIcons.GpsOff, stringResource(R.string.chip_no_gps), colors.unavailable)
+            } else {
+                // Coordinates to three places (~100 m) in this viewer, as before; the
+                // exact fix stays in the proof package. The place name is looked up
+                // from a real geocoder and says so when tapped.
+                PlaceLine(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    accuracyMeters = location.accuracyMeters,
+                    isMock = location.isMock,
+                    decimals = 3,
                 )
+                NoticeChip(
+                    RlIcons.Info,
+                    stringResource(R.string.evidence_precision_short),
+                    stringResource(R.string.evidence_location_precision_note),
+                    colors.unavailable,
+                )
+                if (location.isMock) {
+                    NoticeChip(
+                        RlIcons.Warn,
+                        stringResource(R.string.chip_mock_location),
+                        stringResource(R.string.evidence_location_mock),
+                        colors.fail,
+                    )
+                }
+            }
+
+            ChipFlow {
+                InfoChip(
+                    RlIcons.Phone,
+                    "${device.manufacturer} ${device.model}",
+                    colors.primary,
+                )
+                // Same value, same icon as the History card: the Merkle root. A capture
+                // that has none yet falls back to its event id under a different icon,
+                // so one picture never means two different identifiers.
+                val root = event.merkle?.root
+                if (root != null) {
+                    InfoChip(RlIcons.Hash, root.take(8), colors.primary)
+                } else {
+                    InfoChip(RlIcons.Fingerprint, event.eventId.take(8), colors.unavailable)
+                }
             }
         }
-
-        FactRow(
-            label = stringResource(R.string.evidence_label_device),
-            value = stringResource(
-                R.string.evidence_device_format,
-                device.manufacturer,
-                device.model,
-                device.sdkInt,
-            ),
-        )
-
-        FactRow(
-            label = stringResource(R.string.evidence_label_event),
-            value = event.eventId,
-        )
     }
 }
 

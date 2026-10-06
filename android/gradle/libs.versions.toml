@@ -128,6 +128,10 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+# Icon set (Material Symbols as vectors), version from the BOM like the rest of
+# Compose. The visual redesign leans on icons instead of paragraphs; release
+# builds are shrunk by R8, so only the icons actually referenced ship.
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 # Compose UI testing (Phase 6). Versions come from the BOM above, like the rest
 # of Compose — a test artifact pinned to a different Compose version than the one
 # under test is a well-known source of NoSuchMethodError at run time.
@@ -194,6 +198,7 @@ compose = [
     "androidx-compose-ui-graphics",
     "androidx-compose-ui-tooling-preview",
     "androidx-compose-material3",
+    "androidx-compose-material-icons-extended",
 ]
 camerax = [
     "androidx-camera-core",

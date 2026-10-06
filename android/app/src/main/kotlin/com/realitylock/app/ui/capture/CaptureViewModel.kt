@@ -1,11 +1,15 @@
 package com.realitylock.app.ui.capture
 
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.realitylock.app.capture.CameraController
+import com.realitylock.app.capture.CaptureStage
 import com.realitylock.app.capture.CapturedFrame
+import com.realitylock.app.capture.StageTiming
+import com.realitylock.app.capture.StageTracker
 import com.realitylock.app.capture.model.CapturedEvent
 import com.realitylock.app.core.di.AppContainer
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +30,10 @@ data class CaptureError(val detail: String? = null)
 /** Everything the capture screen renders from. */
 data class CaptureUiState(
     val isCapturing: Boolean = false,
+    /** Real per-stage timings of the capture in flight, or of the last one. */
+    val stages: List<StageTiming> = emptyList(),
+    /** First stage to sealed, in ms; null while a capture is still running. */
+    val sealTotalMillis: Long? = null,
     val lastEvent: CapturedEvent? = null,
     val events: List<CapturedEvent> = emptyList(),
     val error: CaptureError? = null,
@@ -68,17 +76,36 @@ class CaptureViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun capture(includeLocation: Boolean) {
         if (_uiState.value.isCapturing) return
-        _uiState.update { it.copy(isCapturing = true, error = null) }
+        val tracker = StageTracker { SystemClock.elapsedRealtime() }
+        tracker.begin(CaptureStage.SHUTTER)
+        _uiState.update {
+            it.copy(
+                isCapturing = true,
+                error = null,
+                stages = tracker.snapshot(),
+                sealTotalMillis = null,
+            )
+        }
 
         viewModelScope.launch {
             runCatching {
                 val frame: CapturedFrame = cameraController.capture()
                 withContext(Dispatchers.IO) {
-                    coordinator.record(frame, includeLocation = includeLocation)
+                    coordinator.record(frame, includeLocation = includeLocation) { stage ->
+                        tracker.begin(stage)
+                        _uiState.update { it.copy(stages = tracker.snapshot()) }
+                    }
                 }
             }.onSuccess { event ->
+                tracker.finish()
                 _uiState.update {
-                    it.copy(isCapturing = false, lastEvent = event, error = null)
+                    it.copy(
+                        isCapturing = false,
+                        lastEvent = event,
+                        error = null,
+                        stages = tracker.snapshot(),
+                        sealTotalMillis = tracker.totalMillis(),
+                    )
                 }
                 refreshHistory()
                 // Ask for a sync pass. It is constrained on connectivity, so with
@@ -89,6 +116,7 @@ class CaptureViewModel(private val container: AppContainer) : ViewModel() {
                 _uiState.update {
                     it.copy(
                         isCapturing = false,
+                        stages = emptyList(),
                         error = CaptureError(detail = error.message),
                     )
                 }

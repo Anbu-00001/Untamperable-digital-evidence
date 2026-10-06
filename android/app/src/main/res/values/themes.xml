@@ -3,6 +3,14 @@
     <!-- Base application theme. The UI itself is drawn with Compose MaterialTheme;
          this XML theme only needs to be a no-action-bar host for the Compose
          ComponentActivity. Uses a platform theme so no extra (AppCompat /
-         Material Components) dependency is required. -->
-    <style name="Theme.RealityLock" parent="android:Theme.Material.Light.NoActionBar" />
+         Material Components) dependency is required.
+
+         Dark, with a navy window background, so the moment between tapping the
+         icon and the first Compose frame is not a white flash — the app is
+         always dark (see MainActivity). -->
+    <style name="Theme.RealityLock" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/rl_navy</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

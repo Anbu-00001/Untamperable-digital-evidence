@@ -2,6 +2,7 @@ package com.realitylock.app.ui.verify
 
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
@@ -24,8 +25,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +39,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.realitylock.app.R
+import com.realitylock.app.ui.components.NoticeChip
+import com.realitylock.app.ui.components.RlIcons
 import com.realitylock.app.ui.theme.RealityLockTheme
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
 import com.realitylock.app.verify.VerificationReport
@@ -132,14 +135,12 @@ fun AuthenticityResultPanel(
                 // Above the verdict, not in the limitations: the source of a
                 // verdict changes what the verdict means, so it is read first.
                 if (checkedOnDevice) {
-                    Text(
-                        stringResource(R.string.verify_offline_badge),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.ink,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(colors.unavailableSoft, RoundedCornerShape(8.dp))
-                            .padding(10.dp),
+                    NoticeChip(
+                        icon = RlIcons.Phone,
+                        short = stringResource(R.string.verify_offline_short),
+                        full = stringResource(R.string.verify_offline_badge),
+                        tint = colors.info,
+                        startExpanded = true,
                     )
                 }
 
@@ -147,34 +148,20 @@ fun AuthenticityResultPanel(
 
                 ProofChainDiagram(report, revealed = revealed)
 
-                report.merkleRoot?.let { root -> MerkleRootLine(root) }
+                report.merkleRoot?.let { root -> RootChip(root) }
 
                 ChecksSection(groups, revealedGroups = revealed - PROOF_CHAIN_REVEAL_STEPS)
 
-                // Amber, filled, exclamation-marked: seen at a glance, but worded
-                // and coloured so it cannot be mistaken for a failure.
-                if (report.advisories.isNotEmpty()) {
-                    CalloutBlock(
-                        titleRes = R.string.verify_advisories_title,
-                        lead = "Must be seen. These do not, by themselves, condemn the package.",
-                        items = report.advisories,
-                        marker = "!",
-                        fg = colors.warn,
-                        bg = colors.warnSoft,
-                    )
-                }
+                // Amber chips: seen at a glance, but worded and coloured so they
+                // cannot be mistaken for a failure.
+                if (report.advisories.isNotEmpty()) AdvisoryChips(report.advisories)
 
-                // Deliberately containerless: notes explain outcomes already stated
-                // above, so they must not compete visually with the two blocks that
-                // carry their own weight.
-                if (report.notes.isNotEmpty()) {
-                    NotesBlock(report.notes)
-                }
+                if (report.notes.isNotEmpty()) NotesChip(report.notes)
 
                 // Never conditional. A passing verdict is exactly when a reader is
                 // most likely to over-read it, so the ceiling is stated even when
                 // the verifier supplied no list of its own.
-                LimitationsBlock(report.limitations)
+                LimitationChips(report.limitations)
             }
         }
     }
@@ -189,78 +176,26 @@ fun AuthenticityResultPanel(
  */
 @Composable
 private fun VerdictBlock(verdict: VerificationReport.Verdict, checkedOnDevice: Boolean) {
-    val colors = RealityLockThemeTokens.colors
     val style = verdict.style()
+    val body = stringResource(
+        // The server-side INCOMPLETE text blames missing media and says "sync and
+        // verify again" — false for an on-device check, whose ceiling is
+        // INCOMPLETE by construction.
+        if (checkedOnDevice && verdict == VerificationReport.Verdict.INCOMPLETE) {
+            R.string.verify_verdict_incomplete_offline_body
+        } else {
+            verdict.bodyRes()
+        },
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(style.bg)
-            .border(1.dp, style.fg.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+            .border(1.dp, style.fg.copy(alpha = 0.45f), RoundedCornerShape(18.dp))
             .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Text(
-                text = style.glyph,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = style.fg,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    stringResource(style.labelRes),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = style.fg,
-                )
-                Text(
-                    stringResource(
-                        // The server-side INCOMPLETE text blames missing media and
-                        // says "sync and verify again" — false for an on-device
-                        // check, whose ceiling is INCOMPLETE by construction.
-                        if (checkedOnDevice && verdict == VerificationReport.Verdict.INCOMPLETE) {
-                            R.string.verify_verdict_incomplete_offline_body
-                        } else {
-                            verdict.bodyRes()
-                        },
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.ink,
-                )
-            }
-        }
-        verdict.caution()?.let { caution ->
-            Text(
-                text = caution,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = style.fg,
-            )
-        }
-    }
-}
-
-/** Platform monospace, so a root can be compared character by character. */
-@Composable
-private fun MerkleRootLine(root: String) {
-    val colors = RealityLockThemeTokens.colors
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            "Merkle root",
-            style = MaterialTheme.typography.labelMedium,
-            color = colors.inkMuted,
-        )
-        Text(
-            root,
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-            color = colors.ink,
-        )
+        VerdictHeadline(verdict, checkedOnDevice, body)
     }
 }
 
@@ -392,60 +327,45 @@ private fun CheckRow(check: VerificationReport.Check) {
     val colors = RealityLockThemeTokens.colors
     val style = check.outcome.style()
     val recognised = check.name in VerificationReport.DISPLAY_ORDER
-    Row(
+    val detail = checkDetail(check.name)
+    val sentence = outcomeSentence(check.outcome)
+    var open by rememberSaveable(check.name) { mutableStateOf(false) }
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 44.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.Top,
+            .clickable(enabled = detail != null || sentence != null || !recognised) { open = !open }
+            .heightIn(min = 44.dp)
+            .animateContentSize(),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        StatusGlyph(style, modifier = Modifier.padding(top = 2.dp))
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
-            ) {
-                Text(
-                    checkLabel(check.name),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.ink,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 8.dp),
-                )
-                Text(
-                    stringResource(style.labelRes),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = style.fg,
-                    fontWeight = if (check.outcome == Outcome.FAIL) {
-                        FontWeight.Bold
-                    } else {
-                        FontWeight.Medium
-                    },
-                )
-            }
-            checkDetail(check.name)?.let { detail ->
-                Text(
-                    detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.inkMuted,
-                )
-            }
-            outcomeSentence(check.outcome)?.let { sentence ->
-                Text(
-                    sentence,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = style.fg,
-                )
-            }
-            // A check name this app version does not know is shown verbatim as
-            // well as prettified: the raw key is what a reader would have to grep
-            // for in the backend, and prettifying it away would hide the evidence
-            // that this app is the out-of-date party.
+            StatusGlyph(style)
+            Text(
+                checkLabel(check.name),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.ink,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                stringResource(style.labelRes),
+                style = MaterialTheme.typography.labelMedium,
+                color = style.fg,
+                fontWeight = if (check.outcome == Outcome.FAIL) FontWeight.Bold else FontWeight.Medium,
+            )
+        }
+        // What the check tests, and what its outcome means, are one tap away
+        // rather than printed under every row. A failing check opens itself.
+        if (open || check.outcome == Outcome.FAIL) {
+            detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.inkMuted) }
+            sentence?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = style.fg) }
+            // A check name this app version does not know is shown verbatim as well
+            // as prettified: the raw key is what a reader would have to grep for in
+            // the backend, and prettifying it away would hide the evidence that this
+            // app is the out-of-date party.
             if (!recognised) {
                 Text(
                     check.name,
@@ -454,104 +374,6 @@ private fun CheckRow(check: VerificationReport.Check) {
                     color = colors.inkMuted,
                 )
             }
-        }
-    }
-}
-
-/** Filled, marked, coloured — used for advisories, which must not be missed. */
-@Composable
-private fun CalloutBlock(
-    @StringRes titleRes: Int,
-    lead: String,
-    items: List<String>,
-    marker: String,
-    fg: Color,
-    bg: Color,
-) {
-    val colors = RealityLockThemeTokens.colors
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(bg)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(marker, style = MaterialTheme.typography.titleSmall, color = fg)
-            Text(
-                stringResource(titleRes),
-                style = MaterialTheme.typography.titleSmall,
-                color = fg,
-            )
-        }
-        Text(lead, style = MaterialTheme.typography.bodySmall, color = colors.inkMuted)
-        for (item in items) {
-            Text(
-                "• $item",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.ink,
-            )
-        }
-    }
-}
-
-/** Plain, unboxed prose. Notes explain; they do not warn. */
-@Composable
-private fun NotesBlock(notes: List<String>) {
-    val colors = RealityLockThemeTokens.colors
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            stringResource(R.string.verify_notes_title),
-            style = MaterialTheme.typography.titleSmall,
-            color = colors.inkMuted,
-        )
-        for (note in notes) {
-            Text(
-                "— $note",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.ink,
-            )
-        }
-    }
-}
-
-/**
- * The ceiling on what any verdict here establishes. Rendered unconditionally.
- *
- * When the verifier supplies no limitations, this falls back to a stated floor
- * rather than disappearing — an absent ceiling is precisely how a screenshot of
- * this panel gets over-read.
- */
-@Composable
-private fun LimitationsBlock(limitations: List<String>) {
-    val colors = RealityLockThemeTokens.colors
-    val items = limitations.ifEmpty {
-        listOf(
-            "This establishes only what the checks above state. It does not establish " +
-                "that what the camera was pointed at was true.",
-        )
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(colors.infoSoft)
-            .border(1.dp, colors.info.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            stringResource(R.string.verify_limitations_title),
-            style = MaterialTheme.typography.titleSmall,
-            color = colors.info,
-        )
-        for (item in items) {
-            Text(
-                "• $item",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.ink,
-            )
         }
     }
 }

@@ -9,16 +9,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +31,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.realitylock.app.R
 import com.realitylock.app.backup.BackupFailure
+import com.realitylock.app.ui.components.GlassCard
+import com.realitylock.app.ui.components.GradientButton
+import com.realitylock.app.ui.components.IconBadge
+import com.realitylock.app.ui.components.InfoChip
+import com.realitylock.app.ui.components.NoticeChip
+import com.realitylock.app.ui.components.RlIcons
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
 
 /**
@@ -76,96 +84,110 @@ fun BackupSection(viewModel: BackupViewModel, modifier: Modifier = Modifier) {
     // prevent, so it re-reads rather than trusting a cached number.
     LaunchedEffect(Unit) { viewModel.refresh() }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.surface)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(
-            stringResource(R.string.backup_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.ink,
-        )
-        Text(
-            stringResource(R.string.backup_intro),
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.inkMuted,
-        )
-
-        if (!state.hasDestination) {
-            Button(onClick = { picker.launch(null) }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.backup_choose_folder))
-            }
-            if (state.grantRefused) {
-                StatusLine(
-                    text = stringResource(R.string.backup_grant_refused),
-                    color = colors.fail,
-                )
-            }
-            return@Column
-        }
-
-        // ---- destination -----------------------------------------------------
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.backup_folder_label), style = MaterialTheme.typography.labelSmall, color = colors.inkMuted)
-                Text(
-                    state.destinationName ?: stringResource(R.string.backup_folder_unnamed),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                    color = colors.ink,
-                )
-            }
-            TextButton(onClick = { picker.launch(null) }) { Text(stringResource(R.string.backup_change)) }
-        }
-
-        // ---- the count -------------------------------------------------------
-        val blocked = state.blockedBy
-        if (blocked != null) {
-            StatusLine(text = stringResource(describe(blocked)), color = colors.fail)
-        } else {
-            val allDone = state.totalEvents > 0 && state.backedUp == state.totalEvents
-            StatusLine(
-                text =
-                    if (state.totalEvents == 0) stringResource(R.string.backup_no_captures)
-                    else pluralStringResource(
-                        R.plurals.backup_progress,
-                        state.totalEvents,
-                        state.backedUp,
-                        state.totalEvents,
-                    ),
-                color = if (allDone) colors.pass else colors.warn,
+    GlassCard(modifier = modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            IconBadge(RlIcons.Backup, colors.primary, size = 36.dp)
+            Text(
+                stringResource(R.string.backup_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.ink,
             )
         }
-
-        if (state.failed > 0) {
-            StatusLine(
-                text = stringResource(R.string.backup_failed_count, state.failed),
-                color = colors.fail,
+        Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            NoticeChip(
+                icon = RlIcons.Info,
+                short = stringResource(R.string.backup_intro_short),
+                full = stringResource(R.string.backup_intro),
+                tint = colors.info,
             )
-        }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = viewModel::runBackupNow,
-                enabled = !state.running,
-                modifier = Modifier.weight(1f),
+            if (!state.hasDestination) {
+                GradientButton(
+                    text = stringResource(R.string.backup_choose_folder),
+                    icon = RlIcons.Folder,
+                    onClick = { picker.launch(null) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (state.grantRefused) {
+                    NoticeChip(
+                        RlIcons.Warn,
+                        stringResource(R.string.backup_problem_short),
+                        stringResource(R.string.backup_grant_refused),
+                        colors.fail,
+                    )
+                }
+                return@GlassCard
+            }
+
+            // ---- destination -------------------------------------------------
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    stringResource(
-                        if (state.running) R.string.backup_running else R.string.backup_run_now,
-                    ),
+                Row(
+                    Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(RlIcons.Folder, null, tint = colors.primary, modifier = Modifier.size(20.dp))
+                    Text(
+                        state.destinationName ?: stringResource(R.string.backup_folder_unnamed),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                        color = colors.ink,
+                    )
+                }
+                TextButton(onClick = { picker.launch(null) }) { Text(stringResource(R.string.backup_change)) }
+            }
+
+            // ---- the count -----------------------------------------------------
+            val blocked = state.blockedBy
+            if (blocked != null) {
+                NoticeChip(
+                    RlIcons.Warn,
+                    stringResource(R.string.backup_problem_short),
+                    stringResource(describe(blocked)),
+                    colors.fail,
+                    startExpanded = true,
+                )
+            } else {
+                val allDone = state.totalEvents > 0 && state.backedUp == state.totalEvents
+                InfoChip(
+                    icon = if (allDone) RlIcons.ShieldGood else RlIcons.Backup,
+                    text = if (state.totalEvents == 0) {
+                        stringResource(R.string.backup_no_captures)
+                    } else {
+                        pluralStringResource(
+                            R.plurals.backup_progress,
+                            state.totalEvents,
+                            state.backedUp,
+                            state.totalEvents,
+                        )
+                    },
+                    tint = if (allDone) colors.pass else colors.warn,
                 )
             }
-            OutlinedButton(onClick = viewModel::forgetDestination) { Text(stringResource(R.string.backup_forget)) }
+
+            if (state.failed > 0) {
+                NoticeChip(
+                    RlIcons.Fail,
+                    stringResource(R.string.backup_problem_short),
+                    stringResource(R.string.backup_failed_count, state.failed),
+                    colors.fail,
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                GradientButton(
+                    text = stringResource(if (state.running) R.string.backup_running else R.string.backup_run_now),
+                    icon = RlIcons.Backup,
+                    onClick = viewModel::runBackupNow,
+                    enabled = !state.running,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(onClick = viewModel::forgetDestination) { Text(stringResource(R.string.backup_forget)) }
+            }
         }
     }
 }

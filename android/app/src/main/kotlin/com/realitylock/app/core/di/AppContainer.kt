@@ -26,6 +26,8 @@ import com.realitylock.app.backup.SafBackupTarget
 import com.realitylock.app.BuildConfig
 import com.realitylock.app.core.config.AppConfig
 import com.realitylock.app.core.config.CaptureConfig
+import com.realitylock.app.core.config.GeocodingConfig
+import com.realitylock.app.places.AddressResolver
 import com.realitylock.app.core.config.SyncConfig
 import com.realitylock.app.core.device.InstallIdProvider
 import com.realitylock.app.core.time.ClockCorrelator
@@ -100,6 +102,16 @@ class AppContainer(context: Context) {
     )
 
     val verificationClient = VerificationClient(httpClient, AppConfig.backendBaseUrl)
+
+    /**
+     * Place names for coordinates, from a real geocoder and cached on disk. Display
+     * only: nothing it returns is stored in a proof package or signed.
+     */
+    val addressResolver = AddressResolver(
+        context = appContext,
+        client = httpClient,
+        cacheDir = File(appContext.filesDir, GeocodingConfig.CACHE_SUBDIR),
+    )
 
     val certificateRenderer = CertificateRenderer()
 

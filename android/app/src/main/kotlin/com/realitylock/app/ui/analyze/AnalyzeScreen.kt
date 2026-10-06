@@ -3,8 +3,8 @@ package com.realitylock.app.ui.analyze
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import com.realitylock.app.ui.common.scrollableBottomInset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,12 +13,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -26,25 +29,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
-import com.realitylock.app.forensics.PlainLanguage
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.realitylock.app.R
-import com.realitylock.app.forensics.ExifAnalyzer
 import com.realitylock.app.forensics.DeepfakeClassifier
+import com.realitylock.app.forensics.ExifAnalyzer
+import com.realitylock.app.forensics.PlainLanguage
 import com.realitylock.app.forensics.ProofLookup
+import com.realitylock.app.ui.common.scrollableBottomInset
+import com.realitylock.app.ui.components.ChipFlow
+import com.realitylock.app.ui.components.GlassCard
+import com.realitylock.app.ui.components.GradientButton
+import com.realitylock.app.ui.components.IconBadge
+import com.realitylock.app.ui.components.InfoChip
+import com.realitylock.app.ui.components.NoticeChip
+import com.realitylock.app.ui.components.RlIcons
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
 
 /**
  * "Explainable Authenticity Heuristic" screen: the user picks a candidate image
@@ -84,12 +94,16 @@ fun AnalyzeScreen(viewModel: AnalyzeViewModel, modifier: Modifier = Modifier) {
             .padding(bottom = scrollableBottomInset()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Button(
+        GradientButton(
+            text = stringResource(R.string.analyze_pick_image),
+            icon = RlIcons.Photo,
             onClick = { picker.launch("image/*") },
             enabled = !state.analyzing,
             modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(R.string.analyze_pick_image))
+        )
+
+        if (state.proof == null && state.report == null && !state.analyzing && state.error == null) {
+            AnalyzeIntro()
         }
 
         // The headline answer, above everything else. It arrives before the
@@ -97,15 +111,20 @@ fun AnalyzeScreen(viewModel: AnalyzeViewModel, modifier: Modifier = Modifier) {
         state.proof?.let { ProofVerdictCard(it) }
 
         when {
-            state.analyzing -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.height(18.dp))
-                Spacer(Modifier.height(8.dp))
+            state.analyzing -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 3.dp)
                 Text(stringResource(R.string.analyze_running))
             }
 
-            state.error != null -> Text(
-                state.error ?: "",
-                color = MaterialTheme.colorScheme.error,
+            state.error != null -> NoticeChip(
+                RlIcons.Fail,
+                stringResource(R.string.analyze_error_short),
+                state.error,
+                RealityLockThemeTokens.colors.fail,
+                startExpanded = true,
             )
 
             state.report != null -> {
@@ -128,20 +147,39 @@ fun AnalyzeScreen(viewModel: AnalyzeViewModel, modifier: Modifier = Modifier) {
 
 @Composable
 private fun DisclaimerCard() {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                stringResource(R.string.analyze_disclaimer_title),
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-                stringResource(R.string.analyze_disclaimer_body),
-                style = MaterialTheme.typography.bodySmall,
-            )
+    NoticeChip(
+        icon = RlIcons.Science,
+        short = stringResource(R.string.analyze_disclaimer_title),
+        full = stringResource(R.string.analyze_disclaimer_body),
+        tint = RealityLockThemeTokens.colors.warn,
+        startExpanded = true,
+    )
+}
+
+/** Three icons that say what this tab does, before anything has been picked. */
+@Composable
+private fun AnalyzeIntro() {
+    val colors = RealityLockThemeTokens.colors
+    GlassCard(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IntroStep(RlIcons.Photo, stringResource(R.string.analyze_step_pick), colors.primary)
+            Icon(RlIcons.Expand, null, tint = colors.border, modifier = Modifier.size(20.dp).rotate(-90f))
+            IntroStep(RlIcons.Science, stringResource(R.string.analyze_step_inspect), colors.info)
+            Icon(RlIcons.Expand, null, tint = colors.border, modifier = Modifier.size(20.dp).rotate(-90f))
+            IntroStep(RlIcons.ShieldGood, stringResource(R.string.analyze_step_read), colors.pass)
         }
+    }
+}
+
+@Composable
+private fun IntroStep(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: androidx.compose.ui.graphics.Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        IconBadge(icon, tint, size = 52.dp)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = RealityLockThemeTokens.colors.ink)
     }
 }
 
@@ -161,11 +199,14 @@ private fun PlainEnglishToggle(checked: Boolean, onCheckedChange: (Boolean) -> U
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(
-            stringResource(R.string.analyze_plain_english),
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.ink,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(RlIcons.Info, null, tint = colors.primary, modifier = Modifier.size(20.dp))
+            Text(
+                stringResource(R.string.analyze_plain_english),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.ink,
+            )
+        }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
@@ -179,52 +220,38 @@ private fun PlainEnglishToggle(checked: Boolean, onCheckedChange: (Boolean) -> U
  */
 @Composable
 private fun Explainer(text: String) {
-    val colors = RealityLockThemeTokens.colors
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(colors.surfaceAlt)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.inkMuted,
-        )
-    }
+    NoticeChip(
+        icon = RlIcons.Info,
+        short = stringResource(R.string.analyze_plain_short),
+        full = text,
+        tint = RealityLockThemeTokens.colors.unavailable,
+    )
 }
 
 /** The handful of words the screen uses that a reader has no reason to know. */
 @Composable
 private fun GlossaryCard() {
     val colors = RealityLockThemeTokens.colors
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.surfaceAlt)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(
-            stringResource(R.string.analyze_glossary_title),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.ink,
-        )
-        PlainLanguage.glossary.forEach { entry ->
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    entry.term,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colors.ink,
-                )
-                Text(
-                    entry.meaning,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.inkMuted,
-                )
+    var open by rememberSaveable { mutableStateOf(false) }
+    GlassCard(Modifier.fillMaxWidth(), onClick = { open = !open }) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            IconBadge(RlIcons.Record, colors.info, size = 32.dp)
+            Text(
+                stringResource(R.string.analyze_glossary_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.ink,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(if (open) RlIcons.Collapse else RlIcons.Expand, null, tint = colors.inkMuted)
+        }
+        if (open) {
+            Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PlainLanguage.glossary.forEach { entry ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(entry.term, style = MaterialTheme.typography.labelLarge, color = colors.ink)
+                        Text(entry.meaning, style = MaterialTheme.typography.bodySmall, color = colors.inkMuted)
+                    }
+                }
             }
         }
     }
@@ -244,7 +271,7 @@ private fun ReportView(
                 bitmap = report.preview.asImageBitmap(),
                 contentDescription = stringResource(R.string.analyze_source),
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)),
             )
         }
         Column(Modifier.weight(1f)) {
@@ -253,7 +280,7 @@ private fun ReportView(
                 bitmap = report.ela.heatmap.asImageBitmap(),
                 contentDescription = stringResource(R.string.analyze_ela_map),
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)),
             )
         }
     }
@@ -267,7 +294,12 @@ private fun ReportView(
         style = MaterialTheme.typography.bodySmall,
         fontFamily = FontFamily.Monospace,
     )
-    Text(stringResource(R.string.analyze_ela_note), style = MaterialTheme.typography.bodySmall)
+    NoticeChip(
+        RlIcons.Info,
+        stringResource(R.string.analyze_how_to_read),
+        stringResource(R.string.analyze_ela_note),
+        RealityLockThemeTokens.colors.info,
+    )
     if (plainEnglish) {
         Spacer(Modifier.height(4.dp))
         Explainer(
@@ -285,13 +317,19 @@ private fun ReportView(
     Text(stringResource(R.string.analyze_exif_title), style = MaterialTheme.typography.titleMedium)
     val fired = report.exif.flags
     if (fired.isEmpty()) {
-        Text(stringResource(R.string.analyze_exif_none), style = MaterialTheme.typography.bodySmall)
+        NoticeChip(
+            RlIcons.Pass,
+            stringResource(R.string.analyze_exif_none_short),
+            stringResource(R.string.analyze_exif_none),
+            RealityLockThemeTokens.colors.unavailable,
+        )
     } else {
         fired.forEach { finding ->
-            Text(
-                "• " + exifFindingText(finding),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+            NoticeChip(
+                RlIcons.Warn,
+                exifFindingText(finding),
+                null,
+                RealityLockThemeTokens.colors.warn,
             )
             // Each flag gets its explanation directly beneath it rather than
             // pooled at the end. A flag reads as an accusation until you know
@@ -305,24 +343,57 @@ private fun ReportView(
     }
     // Descriptive facts (never framed as a verdict).
     ExifFacts(report.exif)
-    Text(stringResource(R.string.analyze_exif_note), style = MaterialTheme.typography.bodySmall)
+    NoticeChip(
+        RlIcons.Info,
+        stringResource(R.string.analyze_how_to_read),
+        stringResource(R.string.analyze_exif_note),
+        RealityLockThemeTokens.colors.info,
+    )
     if (plainEnglish) {
         Spacer(Modifier.height(4.dp))
         Explainer(PlainLanguage.exif(report.exif))
     }
 }
 
+/**
+ * What the file's metadata says, as chips. With no EXIF at all there is nothing to
+ * list — the flag above already says so, and four rows of dashes read as a broken
+ * screen. With some EXIF, a field the file lacks is named as missing rather than
+ * left blank, because "no software tag" is itself a fact.
+ */
 @Composable
 private fun ExifFacts(report: ExifAnalyzer.ExifReport) {
-    val make = report.make ?: stringResource(R.string.analyze_absent)
-    val model = report.model ?: stringResource(R.string.analyze_absent)
-    val software = report.software ?: stringResource(R.string.analyze_absent)
-    val captured = report.dateTimeOriginal ?: stringResource(R.string.analyze_absent)
-    Text(
-        stringResource(R.string.analyze_exif_facts, make, model, software, captured),
-        style = MaterialTheme.typography.bodySmall,
-        fontFamily = FontFamily.Monospace,
-    )
+    if (!report.hasExif) return
+    val c = RealityLockThemeTokens.colors
+    ChipFlow {
+        val device = listOfNotNull(report.make, report.model).joinToString(" ")
+        if (device.isNotBlank()) {
+            InfoChip(RlIcons.Phone, device, c.primary)
+        } else {
+            InfoChip(RlIcons.Phone, stringResource(R.string.analyze_no_device), c.unavailable)
+        }
+        if (!report.software.isNullOrBlank()) {
+            InfoChip(RlIcons.Sign, report.software, c.primary)
+        } else {
+            InfoChip(RlIcons.Sign, stringResource(R.string.analyze_no_software), c.unavailable)
+        }
+        val captured = report.dateTimeOriginal
+        if (!captured.isNullOrBlank()) {
+            InfoChip(RlIcons.Time, exifDateForDisplay(captured), c.primary)
+        } else {
+            InfoChip(RlIcons.Time, stringResource(R.string.analyze_no_date), c.unavailable)
+        }
+    }
+}
+
+/** EXIF writes dates as "2026:10:05 20:40:50"; show "2026-10-05 20:40:50". */
+internal fun exifDateForDisplay(raw: String): String {
+    val parts = raw.trim().split(' ', limit = 2)
+    return if (parts.size == 2 && parts[0].count { it == ':' } == 2) {
+        parts[0].replace(':', '-') + " " + parts[1]
+    } else {
+        raw.trim()
+    }
 }
 
 @Composable
@@ -402,22 +473,17 @@ private fun ProofVerdictCard(result: ProofLookup.Result) {
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.surface)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = accent,
-        )
-        Text(body, style = MaterialTheme.typography.bodySmall, color = colors.inkMuted)
-    }
+    NoticeChip(
+        icon = when (result) {
+            is ProofLookup.Result.Matched -> if (result.signed) RlIcons.ShieldGood else RlIcons.Warn
+            ProofLookup.Result.NoProof -> RlIcons.Info
+            is ProofLookup.Result.Unreadable -> RlIcons.CloudOff
+        },
+        short = title,
+        full = body,
+        tint = accent,
+        startExpanded = true,
+    )
 }
 
 /**
@@ -472,6 +538,7 @@ private fun ClassifierCard(outcome: DeepfakeClassifier.Outcome, plainEnglish: Bo
                         colors.unknown to stringResource(R.string.analyze_classifier_band_inconclusive)
                 }
                 Text(bandLabel, style = MaterialTheme.typography.bodyMedium, color = accent)
+                ScoreGauge(outcome.score.realScore)
                 Text(
                     stringResource(
                         R.string.analyze_classifier_score,
@@ -500,10 +567,37 @@ private fun ClassifierCard(outcome: DeepfakeClassifier.Outcome, plainEnglish: Bo
             )
         }
 
-        Text(
-            stringResource(R.string.analyze_classifier_caveat),
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.inkMuted,
+        NoticeChip(
+            icon = RlIcons.Warn,
+            short = stringResource(R.string.analyze_classifier_caveat_short),
+            full = stringResource(R.string.analyze_classifier_caveat),
+            tint = colors.warn,
         )
+    }
+}
+
+/**
+ * The model's raw output on a 0..1 track. Deliberately neutral — one blue track,
+ * a marker, and the words at each end — with no green or red anywhere: this number
+ * is not a verdict (ADR-0010), and colouring it as one would make it read as one.
+ */
+@Composable
+private fun ScoreGauge(score: Float) {
+    val colors = RealityLockThemeTokens.colors
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        androidx.compose.foundation.Canvas(
+            Modifier.fillMaxWidth().height(22.dp),
+        ) {
+            val track = 6.dp.toPx()
+            val y = size.height / 2f
+            drawLine(colors.border, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), track, androidx.compose.ui.graphics.StrokeCap.Round)
+            val x = (score.coerceIn(0f, 1f)) * size.width
+            drawCircle(colors.info.copy(alpha = 0.3f), 11.dp.toPx(), androidx.compose.ui.geometry.Offset(x.coerceIn(11.dp.toPx(), size.width - 11.dp.toPx()), y))
+            drawCircle(colors.info, 6.dp.toPx(), androidx.compose.ui.geometry.Offset(x.coerceIn(11.dp.toPx(), size.width - 11.dp.toPx()), y))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(stringResource(R.string.analyze_score_low), style = MaterialTheme.typography.labelSmall, color = colors.inkMuted)
+            Text(stringResource(R.string.analyze_score_high), style = MaterialTheme.typography.labelSmall, color = colors.inkMuted)
+        }
     }
 }

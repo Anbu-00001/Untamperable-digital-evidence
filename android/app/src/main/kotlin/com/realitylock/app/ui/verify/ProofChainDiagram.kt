@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.realitylock.app.R
 import com.realitylock.app.ui.theme.RealityLockThemeTokens
 import com.realitylock.app.verify.VerificationReport
 import com.realitylock.app.verify.VerificationReport.Outcome
@@ -92,14 +93,9 @@ fun ProofChainDiagram(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
-            "How the proof holds together",
+            stringResource(R.string.verify_chain_title),
             style = MaterialTheme.typography.titleSmall,
             color = colors.ink,
-        )
-        Text(
-            "Each link is coloured by the check that tested it.",
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.inkMuted,
         )
         Row(
             modifier = Modifier.fillMaxWidth(),

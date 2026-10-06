@@ -59,7 +59,15 @@ class CaptureCoordinator(
      *        permission — the event is still recorded, with location omitted
      *        and the omission visible rather than silently faked.
      */
-    suspend fun record(frame: CapturedFrame, includeLocation: Boolean): CapturedEvent {
+    suspend fun record(
+        frame: CapturedFrame,
+        includeLocation: Boolean,
+        /**
+         * Called as each [CaptureStage] genuinely begins. Defaults to nothing, so
+         * every existing caller and test is unchanged.
+         */
+        onStage: (CaptureStage) -> Unit = {},
+    ): CapturedEvent {
         val eventId = eventIdFactory()
 
         // 1. Normalise the camera's timestamp onto the boot-time base that
@@ -81,6 +89,7 @@ class CaptureCoordinator(
         val motion = sensors.snapshotNearest(captureElapsedRealtimeNanos)
 
         // 4. Location, bounded so a slow GNSS fix cannot stall the capture.
+        if (includeLocation) onStage(CaptureStage.LOCATE)
         val platformLocation = if (includeLocation) {
             withTimeoutOrNull(CaptureConfig.LOCATION_REQUEST_TIMEOUT_MILLIS) {
                 locationSource.awaitCurrentLocation()
@@ -93,6 +102,7 @@ class CaptureCoordinator(
         }
 
         // 5. Write the media exactly once; it is never modified afterwards.
+        onStage(CaptureStage.HASH)
         val mediaFile = mediaFileStore.write(eventId, frame.jpegBytes)
 
         // 6. Hash the media from the file that was just written, streamed —
@@ -128,6 +138,7 @@ class CaptureCoordinator(
 
         // 9. Compose the 2-leaf Merkle root and sign it in secure hardware.
         val rootHex = MerkleTree.root2Leaf(mediaHashHex, metadataHashHex)
+        onStage(CaptureStage.SIGN)
         val signed = eventSigner.sign(rootHex)
 
         val event = CapturedEvent(
@@ -159,6 +170,7 @@ class CaptureCoordinator(
         )
 
         // 10. Persist the metadata sidecar next to the media.
+        onStage(CaptureStage.SEAL)
         return repository.save(event)
     }
 
