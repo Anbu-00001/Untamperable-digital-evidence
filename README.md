@@ -1,21 +1,330 @@
+<div align="center">
+
+<img src="docs/media/hero.png" alt="Reality Lock: capture, seal, sync, verify, explore" width="100%">
+
 # Reality Lock
 
-**Tamper-Evident Event Proof System for Mobile Devices** — an Android app that captures a real-world event (photo/video + GPS + timestamp + motion sensors), cryptographically hashes and signs the bundle at the moment of capture with a hardware-backed key, and produces a **tamper-evident proof package** that any later modification is detectable against. A verification module recomputes and checks the package and reports an authenticity verdict.
+**Tamper-evident event proof for mobile devices.**<br>
+Capture a real-world moment, seal it with a hardware-backed key, and let anyone check later that it was **not altered**.
+
+![Android](https://img.shields.io/badge/Android-Kotlin%20%C2%B7%20Compose-3DDC84?logo=android&logoColor=white)
+![Backend](https://img.shields.io/badge/Backend-Node%20%C2%B7%20Express-339933?logo=nodedotjs&logoColor=white)
+![Crypto](https://img.shields.io/badge/Crypto-SHA--256%20%C2%B7%20Merkle%20%C2%B7%20ECDSA%20P--256-0ea5e9)
+![Keys](https://img.shields.io/badge/Keys-Android%20Keystore%20(TEE%2FStrongBox)-8b5cf6)
+![Tests](https://img.shields.io/badge/tests-364%20Android%20%C2%B7%20178%20backend-34d399)
+![Honesty](https://img.shields.io/badge/never-one%20%22trust%20score%22-fb7185)
+
+</div>
 
 > Course project — Mobile Application Development / Embedded Programming, Dept. of CSE.
-> Team: Rakesh S, Anbuchelvan Ganesan.
+> Team: **Rakesh S**, **Anbuchelvan Ganesan**.
+
+## What it does, in 30 seconds
+
+1. 📷 **Capture** — the app records a photo **plus** GPS, time and motion-sensor readings in one shot. There is no "import from gallery", so a pre-edited file can never be signed.
+2. 🔐 **Seal** — in about a second it hashes everything (SHA-256 → Merkle root) and signs the root with a key that **never leaves the phone's secure hardware**.
+3. 📡 **Sync** — works with no network; the signed package queues and uploads by itself when connectivity returns.
+4. ✅ **Verify** — a backend re-computes every hash and signature (15 checks) and shows *which* checks passed — never a single made-up score.
+5. 🧪 **Explore** — flip one bit of a photo in the app and watch the hash, the Merkle root and the signature all break.
+
+## See it work
+
+Real screenshots from the app running on a OnePlus CPH2591 (Android 15). Precise GPS coordinates are blacked out in these images.
+
+<table>
+<tr>
+<td align="center" width="25%"><img src="docs/media/capture-live.png" width="210"><br><b>Live sensors</b><br><sub>real satellites, accuracy, tilt</sub></td>
+<td align="center" width="25%"><img src="docs/media/sky-legend.png" width="210"><br><b>Reads itself out</b><br><sub>tap the radar for a legend</sub></td>
+<td align="center" width="25%"><img src="docs/media/seal.png" width="210"><br><b>The seal</b><br><sub>every stage timed for real</sub></td>
+<td align="center" width="25%"><img src="docs/media/offline-queued.png" width="210"><br><b>Offline-first</b><br><sub>airplane mode, queued (☁ 1)</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/media/history.png" width="210"><br><b>History</b><br><sub>trust ring per capture</sub></td>
+<td align="center"><img src="docs/media/verified.png" width="210"><br><b>Verified</b><br><sub>15 checks, 4 groups</sub></td>
+<td align="center"><img src="docs/media/phone-verify.png" width="210"><br><b>On-phone verify</b><br><sub>honestly says INCOMPLETE</sub></td>
+<td align="center"><img src="docs/media/web-verifier.png" width="210"><br><b>Public web verifier</b><br><sub>QR on the certificate opens it</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/media/proof-explorer-tamper.png" width="210"><br><b>Proof explorer</b><br><sub>flip one bit, see it break</sub></td>
+<td align="center"><img src="docs/media/tamper-failed.png" width="210"><br><b>Real tamper test</b><br><sub>one digit edited → FAILED</sub></td>
+<td align="center"><img src="docs/media/analyze.png" width="210"><br><b>Forensic triage</b><br><sub>ELA + EXIF flags, never a verdict</sub></td>
+<td align="center"><img src="docs/media/device.png" width="210"><br><b>Device status</b><br><sub>capabilities + hardware key</sub></td>
+</tr>
+</table>
+
+> **Walkthrough video.** A 34-second screen recording of the whole flow (airplane-mode capture → auto-sync → verify → tamper → restore → forensic triage) can be regenerated with [`scripts/demo/walkthrough/`](scripts/demo/walkthrough/). Every frame is the real app on a real phone; slowed or sped-up parts are labelled on screen.
+
+## How it works
+
+### System overview
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Inter, sans-serif','lineColor':'#94a3b8','textColor':'#e2e8f0','edgeLabelBackground':'#1e293b'}}}%%
+flowchart LR
+  subgraph PHONE["📱 Android app — Kotlin · Compose · MVVM"]
+    direction TB
+    CAM["📷 CameraX<br/>in-memory JPEG"]:::sense
+    GPS["📍 Fused location<br/>+ GNSS status"]:::sense
+    MOT["🧭 Accelerometer<br/>+ gyroscope"]:::sense
+    SEAL["🔐 Seal<br/>SHA-256 → Merkle root<br/>ECDSA P-256 signature"]:::crypto
+    KS[("🗝️ Android Keystore<br/>TEE / StrongBox")]:::key
+    STORE[("💾 Local store<br/>id.jpg + id.json<br/>write-once")]:::store
+    WM["🔄 WorkManager<br/>waits for a network"]:::sync
+    CAM --> SEAL
+    GPS --> SEAL
+    MOT --> SEAL
+    KS -. signs .-> SEAL
+    SEAL --> STORE --> WM
+  end
+  subgraph CLOUD["☁️ Backend — Node · Express · Render"]
+    direction TB
+    PROOF["POST /proof<br/>idempotent · hash-checked"]:::api
+    DB[("🗄️ Content-addressed<br/>evidence store")]:::store
+    VER["⚖️ /verify<br/>15 independent checks"]:::crypto
+    ROOTS["🏛️ Pinned Google<br/>attestation roots<br/>+ revocation list"]:::key
+    TSA["🕐 RFC 3161 time anchor<br/>(optional)"]:::api
+    WEB["🌐 GET /verify/:id<br/>readable page for browsers"]:::api
+    PROOF --> DB --> VER
+    ROOTS -.-> VER
+    TSA -.-> VER
+    VER --> WEB
+  end
+  WM -- "1 package, then 2 media" --> PROOF
+  VER -- "verdict + every check" --> UI["✅ History · trust rings<br/>result panel · certificate PDF"]:::ui
+  classDef sense fill:#0e7490,stroke:#22d3ee,color:#ecfeff,stroke-width:2px
+  classDef crypto fill:#047857,stroke:#34d399,color:#ecfdf5,stroke-width:2px
+  classDef key fill:#6d28d9,stroke:#a78bfa,color:#f5f3ff,stroke-width:2px
+  classDef store fill:#1e3a8a,stroke:#60a5fa,color:#eff6ff,stroke-width:2px
+  classDef sync fill:#b45309,stroke:#fbbf24,color:#fffbeb,stroke-width:2px
+  classDef api fill:#334155,stroke:#94a3b8,color:#f8fafc,stroke-width:2px
+  classDef ui fill:#be123c,stroke:#fb7185,color:#fff1f2,stroke-width:2px
+  style PHONE fill:#0b1228,stroke:#22d3ee,color:#e2e8f0,stroke-width:2px
+  style CLOUD fill:#0b1228,stroke:#60a5fa,color:#e2e8f0,stroke-width:2px
+```
+
+### The capture "seal" — five real stages
+
+Each ring node lights up only when the pipeline *actually* reaches that stage, and shows how long it really took. A stage that never ran (no location permission) is shown as `skip`, never quietly ticked off.
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Inter, sans-serif','lineColor':'#94a3b8','textColor':'#e2e8f0','edgeLabelBackground':'#1e293b'}}}%%
+flowchart LR
+  S1["📷 SHUTTER<br/>one frame, in memory<br/><i>e.g. 1.0 s</i>"]:::a --> S2["📍 LOCATE<br/>one fix, or recorded as<br/>absent — never guessed<br/><i>e.g. 195 ms</i>"]:::b
+  S2 --> S3["# HASH<br/>SHA-256 of the photo<br/>+ canonical metadata (RFC 8785)<br/><i>e.g. 80 ms</i>"]:::c
+  S3 --> S4["🔑 SIGN<br/>ECDSA P-256 over the root<br/>key stays in hardware<br/><i>e.g. 64 ms</i>"]:::d
+  S4 --> S5["🔒 SEAL<br/>write id.jpg + id.json<br/>write-once<br/><i>e.g. 76 ms</i>"]:::e
+  classDef a fill:#0e7490,stroke:#22d3ee,color:#ecfeff,stroke-width:2px
+  classDef b fill:#0369a1,stroke:#38bdf8,color:#f0f9ff,stroke-width:2px
+  classDef c fill:#4338ca,stroke:#818cf8,color:#eef2ff,stroke-width:2px
+  classDef d fill:#6d28d9,stroke:#a78bfa,color:#f5f3ff,stroke-width:2px
+  classDef e fill:#047857,stroke:#34d399,color:#ecfdf5,stroke-width:2px
+```
+
+### Offline-first sync
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Inter, sans-serif','actorBkg':'#1e3a8a','actorTextColor':'#eff6ff','actorBorder':'#60a5fa','signalColor':'#94a3b8','signalTextColor':'#7b8bb0','textColor':'#7b8bb0','noteBkgColor':'#fef3c7','noteTextColor':'#451a03'}}}%%
+sequenceDiagram
+  autonumber
+  actor U as 👤 User
+  participant A as 📱 App
+  participant W as 🔄 WorkManager
+  participant B as ☁️ Backend
+  rect rgb(251, 191, 36, 0.12)
+    Note over U,A: No network (airplane mode)
+    U->>A: press shutter
+    A->>A: hash · sign · save locally
+    A-->>U: sealed, header shows ☁ 1 waiting
+    A->>W: queue upload (needs network)
+  end
+  rect rgb(52, 211, 153, 0.12)
+    Note over W,B: Network returns — nobody taps anything
+    W->>B: 1 · signed package
+    B->>B: schema + hash checks, store write-once
+    B-->>W: PACKAGE_STORED
+    W->>B: 2 · photo bytes
+    B->>B: accept only if SHA-256 equals the signed commitment
+    B-->>W: COMPLETE
+    W-->>A: badge disappears
+  end
+  rect rgb(96, 165, 250, 0.12)
+    Note over U,B: Later, from anywhere
+    U->>A: Verify
+    A->>B: POST /verify
+    B-->>A: verdict + 15 named checks
+  end
+```
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Inter, sans-serif','lineColor':'#94a3b8','textColor':'#e2e8f0','edgeLabelBackground':'#1e293b'}}}%%
+stateDiagram-v2
+  direction LR
+  [*] --> PENDING: sealed on the phone
+  PENDING --> PACKAGE_STORED: signed package accepted
+  PACKAGE_STORED --> COMPLETE: media hash matches the commitment
+  PENDING --> FAILED: rejected or retries used up
+  PACKAGE_STORED --> FAILED: media rejected
+  FAILED --> PENDING: Retry sync
+  COMPLETE --> [*]
+  classDef wait fill:#b45309,stroke:#fbbf24,color:#fffbeb
+  classDef half fill:#1d4ed8,stroke:#60a5fa,color:#eff6ff
+  classDef good fill:#047857,stroke:#34d399,color:#ecfdf5
+  classDef bad fill:#be123c,stroke:#fb7185,color:#fff1f2
+  class PENDING wait
+  class PACKAGE_STORED half
+  class COMPLETE good
+  class FAILED bad
+```
+
+### What exactly is signed — the proof chain
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Inter, sans-serif','lineColor':'#94a3b8','textColor':'#e2e8f0','edgeLabelBackground':'#1e293b'}}}%%
+flowchart LR
+  P["📷 Photo bytes"]:::photo --> H0["SHA-256<br/>leaf 0"]:::hash
+  M["🧾 Record<br/>time · place · motion · device"]:::rec --> C["RFC 8785<br/>canonical JSON"]:::rec --> H1["SHA-256<br/>leaf 1"]:::hash
+  H0 --> R["🌳 Merkle root"]:::root
+  H1 --> R
+  R --> SIG["✍️ ECDSA P-256<br/>signature"]:::sig
+  K[("🗝️ Keystore key<br/>TEE / StrongBox")]:::key -. signs .-> SIG
+  K --> ATT["📜 Attestation chain<br/>4 certificates"]:::key
+  ATT --> G["🏛️ Google root<br/>(pinned, checked for revocation)"]:::gov
+  SIG --> OK{{"Anyone can recompute<br/>and compare"}}:::ok
+  classDef photo fill:#0e7490,stroke:#22d3ee,color:#ecfeff,stroke-width:2px
+  classDef rec fill:#0369a1,stroke:#38bdf8,color:#f0f9ff,stroke-width:2px
+  classDef hash fill:#4338ca,stroke:#818cf8,color:#eef2ff,stroke-width:2px
+  classDef root fill:#047857,stroke:#34d399,color:#ecfdf5,stroke-width:3px
+  classDef sig fill:#b45309,stroke:#fbbf24,color:#fffbeb,stroke-width:2px
+  classDef key fill:#6d28d9,stroke:#a78bfa,color:#f5f3ff,stroke-width:2px
+  classDef gov fill:#334155,stroke:#cbd5e1,color:#f8fafc,stroke-width:2px
+  classDef ok fill:#be123c,stroke:#fb7185,color:#fff1f2,stroke-width:2px
+```
+
+Change **one bit** of the photo and leaf 0 changes, so the root changes, so the signature no longer verifies. Change the record and the same happens through leaf 1. An attacker who rewrites the record *and* recomputes the hashes still fails, because the root is signed by a key they do not hold.
+
+### 15 checks, 4 groups — and no single score
+
+Each trust-ring arc takes the **worst** outcome in its group. A group with no result yet is an empty arc, not a pass.
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Inter, sans-serif','lineColor':'#94a3b8','textColor':'#e2e8f0','edgeLabelBackground':'#1e293b'}}}%%
+flowchart TB
+  subgraph G1["🧱 Integrity · 4"]
+    direction TB
+    a1["schemaValid"]:::chk
+    a2["mediaHashMatch"]:::chk
+    a3["metadataHashMatch"]:::chk
+    a4["merkleRootMatch"]:::chk
+  end
+  subgraph G2["✍️ Signature · 1"]
+    direction TB
+    b1["signatureValid"]:::chk
+  end
+  subgraph G3["🛡️ Attestation · 6"]
+    direction TB
+    c1["attestationPresent"]:::chk
+    c2["attestationChainValid"]:::chk
+    c3["attestationKeyBinding"]:::chk
+    c4["attestationRootTrusted"]:::chk
+    c5["attestationNotRevoked"]:::chk
+    c6["attestationSecurityLevel"]:::chk
+  end
+  subgraph G4["🕐 Context · 4"]
+    direction TB
+    d1["timestampPlausible"]:::chk
+    d2["timestampAnchorValid *"]:::chk
+    d3["captureTimeNotAfterAnchor *"]:::chk
+    d4["locationPlausible"]:::chk
+  end
+  G1 --> RING(("🔘 Trust ring<br/>4 arcs"))
+  G2 --> RING
+  G3 --> RING
+  G4 --> RING
+  RING --> LEG["✓ pass · ✕ fail · — not checkable · ? unknown<br/>icon + colour + word, always"]:::leg
+  classDef chk fill:#0f172a,stroke:#475569,color:#e2e8f0
+  classDef leg fill:#1e293b,stroke:#94a3b8,color:#f8fafc
+  style G1 fill:#083344,stroke:#22d3ee,color:#cffafe,stroke-width:2px
+  style G2 fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:2px
+  style G3 fill:#3b0764,stroke:#a78bfa,color:#ede9fe,stroke-width:2px
+  style G4 fill:#451a03,stroke:#fbbf24,color:#fef3c7,stroke-width:2px
+  style RING fill:#be123c,stroke:#fb7185,color:#fff1f2,stroke-width:2px
+```
+
+<sub>\* Only checkable when RFC 3161 time anchoring is enabled on the server (`TIMESTAMP_ANCHOR_ENABLED=true`); otherwise they read **not checkable** — which is *not* the same as pass or fail.</sub>
+
+| Symbol | Meaning | Colour |
+|---|---|---|
+| ✓ **pass** | the check ran and held | green |
+| ✕ **fail** | the check ran and broke — the verdict becomes **FAILED** | red |
+| — **not checkable** | the evidence needed to run it is not there; never shown as pass or fail | grey |
+| ? **unknown** | the verifier returned something this app version does not know | violet |
+
+### Live demo flow
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Inter, sans-serif','lineColor':'#94a3b8','textColor':'#e2e8f0','edgeLabelBackground':'#1e293b'}}}%%
+flowchart LR
+  D0["🧰 demo_prep.sh<br/>URL · permissions · server awake"]:::prep --> D1["✈️ Airplane mode<br/>capture → ☁ 1 waiting"]:::cap
+  D1 --> D2["📶 Reconnect<br/>uploads by itself"]:::sync
+  D2 --> D3["✅ Verify<br/>VERIFIED · 15 checks"]:::ok
+  D3 --> D4["🌳 Proof explorer<br/>flip a bit · everything breaks"]:::explore
+  D4 --> D5["✏️ tamper.sh<br/>edit 1 digit of the record"]:::bad
+  D5 --> D6["❌ Verify<br/>FAILED · Record link breaks"]:::bad
+  D6 --> D7["↩️ tamper.sh --restore<br/>SHA-256 confirmed"]:::sync
+  D7 --> D8["✅ Verify again<br/>VERIFIED"]:::ok
+  classDef prep fill:#334155,stroke:#94a3b8,color:#f8fafc,stroke-width:2px
+  classDef cap fill:#0e7490,stroke:#22d3ee,color:#ecfeff,stroke-width:2px
+  classDef sync fill:#b45309,stroke:#fbbf24,color:#fffbeb,stroke-width:2px
+  classDef ok fill:#047857,stroke:#34d399,color:#ecfdf5,stroke-width:2px
+  classDef explore fill:#6d28d9,stroke:#a78bfa,color:#f5f3ff,stroke-width:2px
+  classDef bad fill:#be123c,stroke:#fb7185,color:#fff1f2,stroke-width:2px
+```
+
+## Honest by design
+
+This is an evidence app, so it is deliberately careful about what it claims.
+
+- **No single "trust score".** Four independent groups, each in its own state.
+- **`not checkable` is never `pass` or `fail`.** A device that cannot attest is not condemned; a missing time anchor is not a pass.
+- **Verified means *unchanged since capture and signed by one hardware-backed key*.** It does **not** prove the event was real, unstaged or correctly described, and it is not a standalone legal certificate.
+- **The phone's own check can never say VERIFIED** (see the screenshot above) — only the server, with the full chain, can.
+- **Place names are display-only.** The readable place under the coordinates comes from a real geocoder (platform `Geocoder`, falling back to OpenStreetMap Nominatim with rounded coordinates). It is cached on the phone, never invented, never shown for a mock location, and is **not part of the signed record**.
+- **The live radar is a live view, not evidence.** Satellites, tilt and accuracy are read from the phone's sensors while you frame the shot; only the single fix taken at the shutter is recorded.
+- **The forensic *Analyze* tab is triage, not a verdict.** ELA and EXIF flags have innocent explanations; the experimental face classifier runs behind a face gate and carries no accuracy claim.
 
 ## Repository layout
 | Path | What it is |
 |---|---|
-| [`android/`](android/) | Android app (Kotlin, MVVM, Compose): capture, hardware-backed signing, offline sync, on-device verification, forensic Analyze tab, evidence export and backup. Verified on a physical device. |
+| [`android/`](android/) | Android app (Kotlin, MVVM, Compose): capture, hardware-backed signing, offline sync, on-device verification, proof explorer, forensic Analyze tab, evidence export and backup. Verified on a physical device. |
 | [`backend/`](backend/) | Node.js + Express verification/storage service: full cryptographic `/verify`, Google-rooted attestation with revocation, RFC 3161 time anchoring, rate limiting, proof-of-possession reads. |
 | [`docs/design/`](docs/design/) | The **Proof Package** schema + spec, example instance, and Architecture Decision Records. |
 | [`docs/evidence/`](docs/evidence/) | Real proof sidecars pulled off a physical device, so the status claims below can be **checked, not trusted**. |
+| [`docs/media/`](docs/media/) | The screenshots used in this README (coordinates blacked out). |
+| [`scripts/demo/`](scripts/demo/) | Live-demo toolkit: readiness check, tamper/restore, and [`walkthrough/`](scripts/demo/walkthrough/) which records and cuts the walkthrough video from the real phone. |
 | [`research/`](research/) | The full research corpus (competitive landscape, crypto architecture, tech stack, legal, literature) + the phased plan. **Start with [`research/README.md`](research/README.md).** |
 | [`SETUP.md`](SETUP.md) | How to build/run each part + the manual cloud-account steps. |
 
-## Status
+## Project phases
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Segoe UI, Inter, sans-serif','lineColor':'#94a3b8','textColor':'#e2e8f0','edgeLabelBackground':'#1e293b'}}}%%
+flowchart LR
+  P0["0 · Foundations<br/>code complete"]:::part --> P1["1 · Design<br/>proof package v1"]:::done
+  P1 --> P2["2 · Capture<br/>CameraX · sensors · GPS"]:::done
+  P2 --> P3["3 · Crypto core<br/>Merkle · ECDSA · attestation"]:::done
+  P3 --> P4["4 · Integrity + forensics<br/>mock-location · ELA · EXIF"]:::done
+  P4 --> P5["5 · Backend + sync<br/>offline-first · /verify"]:::done
+  P5 --> P6["6 · Security validation<br/>rate limits · proof-of-possession"]:::done
+  P6 --> P7["7-8 · Stretch + attestation<br/>RFC 3161 · annexure · bundle"]:::part
+  P7 --> P9["9 · Cyber UI<br/>radar · seal · explorer · trust rings"]:::done
+  classDef done fill:#047857,stroke:#34d399,color:#ecfdf5,stroke-width:2px
+  classDef part fill:#b45309,stroke:#fbbf24,color:#fffbeb,stroke-width:2px
+```
+
+<sub>Green = complete against its own exit criteria; amber = partial **by design** (cloud accounts outstanding, accuracy characterisation in progress, stretch items refused or deferred with reasons). The details — including the defects found and fixed on a real device — are below.</sub>
+
+<details>
+<summary><b>Phase-by-phase status log</b> (click to expand)</summary>
 
 > "Complete" below means **the phase's own exit criteria in
 > [`research/09_PROJECT_PHASES.md`](research/09_PROJECT_PHASES.md) are met** — not
@@ -161,8 +470,20 @@ Full record: [`docs/design/PHASE7_STRETCH_STATUS.md`](docs/design/PHASE7_STRETCH
 - **Refused or declined with reasons:** OpenTimestamps (unfixable CVEs), face blur,
   Wi-Fi/cell cross-check. **Not built:** PRNU, C2PA export, Polygon anchoring.
 
-Test inventory (2026-09-21): **178 backend tests** and **336 Android JVM tests**, all
-passing, plus **34 instrumented** `@Test` methods.
+Test inventory: **364 Android JVM tests** (run 2026-10-07, 0 failures), **178 backend tests** (last run
+2026-09-21; the backend has not changed since), plus **34 instrumented** `@Test` methods and one
+manual on-device test for the address lookup.
+
+### Phase 9 (Cyber UI and live showpieces, October 2026) — complete, verified on device
+- **Always-dark cyber look**, an adaptive launcher icon and a drawn-on splash. Long caveats became icon chips with the **full text one tap away** — shortened, never deleted.
+- **Live sensor radar** on the viewfinder: real GNSS satellites (used vs only seen), reported accuracy and a tilt bubble. It is a live view only; the legend says so, and nothing from it is saved.
+- **Capture "seal" animation** driven by the real pipeline: shutter, locate, hash, sign, seal, each with its measured duration; a skipped stage reads `skip`.
+- **Trust rings** on History: four arcs (Integrity, Signature, Attestation, Context), each the worst outcome of its group — never one score.
+- **Proof explorer** with a tamper simulator that flips one bit in an in-memory copy and re-runs the real SHA-256 and ECDSA checks. Nothing is written.
+- **Place names beside coordinates** from a real geocoder, display-only and never signed; verified against independent Plus Codes and an on-device test (see *Honest by design*).
+- Found and fixed while recording the walkthrough: the header's Online/Offline pill could stay "Online" through airplane mode (it now reads the network callback's own capabilities and requires a validated connection), and a verdict opened below the fold with nothing scrolling it into view (History now scrolls to the card the result belongs to). **364 JVM tests pass.**
+
+</details>
 
 ## Live demo toolkit
 - **`scripts/demo/demo_prep.sh [--resync-missing]`** — run before any demo with the

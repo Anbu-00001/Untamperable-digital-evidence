@@ -113,22 +113,38 @@ fun BrandMark(modifier: Modifier = Modifier, size: Dp = 34.dp, progress: Float =
     }
 }
 
-/** True while the phone has a network that claims internet access. */
+/**
+ * True while the phone's default network can actually reach the internet.
+ *
+ * Reads capabilities from the callback itself instead of asking the system for
+ * "the active network" afterwards: in `onLost` that lookup can still return the
+ * network that just went away, which left the header saying Online through airplane
+ * mode. A default-network callback's `onLost` means there is no default network at
+ * all, so that is Offline outright. VALIDATED is required as well as INTERNET — a
+ * Wi-Fi that is joined but has no uplink is not "online" for a sync that needs one,
+ * and it is the same test WorkManager applies before it will run the upload.
+ */
 @Composable
 fun rememberIsOnline(): State<Boolean> {
     val context = LocalContext.current
     val online = remember { mutableStateOf(true) }
     DisposableEffect(context) {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        fun current(): Boolean =
-            cm.getNetworkCapabilities(cm.activeNetwork)
-                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        online.value = current()
+        fun usable(caps: NetworkCapabilities?): Boolean =
+            caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        online.value = usable(cm.activeNetwork?.let(cm::getNetworkCapabilities))
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { online.value = current() }
-            override fun onLost(network: Network) { online.value = current() }
+            override fun onAvailable(network: Network) {
+                online.value = usable(cm.getNetworkCapabilities(network))
+            }
+
+            override fun onLost(network: Network) {
+                online.value = false
+            }
+
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                online.value = current()
+                online.value = usable(caps)
             }
         }
         runCatching { cm.registerDefaultNetworkCallback(callback) }

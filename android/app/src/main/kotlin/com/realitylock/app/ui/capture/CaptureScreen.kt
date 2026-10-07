@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -738,7 +739,24 @@ private fun HistoryTab(
     }
 
     val colors = RealityLockThemeTokens.colors
+    val listState = rememberLazyListState()
+
+    // A verdict opens directly beneath its card, which can be below the fold. Bring
+    // that card to the top so tapping Verify visibly does something and the result
+    // is read against the capture it describes. Keyed on the event, not the report,
+    // so closing the panel or a quiet background refresh never moves the list.
+    val resultEventId = proofsState.reportEventId.takeIf { proofsState.report != null }
+    val headerItems = 2 + (if (proofsState.verifyError != null) 1 else 0) +
+        (if (proofsState.certificateError != null) 1 else 0)
+    LaunchedEffect(resultEventId) {
+        val index = events.indexOfFirst { it.eventId == resultEventId }
+        if (resultEventId != null && index >= 0) {
+            listState.animateScrollToItem(headerItems + index)
+        }
+    }
+
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         // As contentPadding (not padding on the list) the viewport stays full
         // height and the last card scrolls fully clear of the bar below.

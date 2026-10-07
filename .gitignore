@@ -205,3 +205,27 @@ env/
 
 # Phase-5 backend store (filesystem driver default)
 backend/.data/
+
+# ---------------------------------------------------------------------------
+# README media (added 2026-10-07) — listed by EXACT PATH, per the rule above.
+# ---------------------------------------------------------------------------
+# Checked before un-ignoring: these are frames cut from screen recordings of the
+# app on a test phone (made by scripts/demo/walkthrough/), not camera photos, so
+# they carry no EXIF and no device serial. Precise GPS coordinates are blacked out
+# by compose.py; the only place text left is the neighbourhood-level name the app
+# shows. The system photo picker (the owner's personal gallery) is cut from the
+# footage. The walkthrough .mp4 itself stays ignored on purpose: it is rebuilt by
+# the scripts, and a video is much harder to re-check frame by frame.
+!docs/media/hero.png
+!docs/media/capture-live.png
+!docs/media/sky-legend.png
+!docs/media/seal.png
+!docs/media/offline-queued.png
+!docs/media/history.png
+!docs/media/verified.png
+!docs/media/phone-verify.png
+!docs/media/proof-explorer-tamper.png
+!docs/media/tamper-failed.png
+!docs/media/analyze.png
+!docs/media/device.png
+!docs/media/web-verifier.png
